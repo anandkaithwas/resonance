@@ -321,9 +321,7 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                         items(suggestions, key = { it.track.id }) { recommendation ->
                             Card(onClick = { playLocalQueue(controller, tracks, recommendation.track.id) }, shape = RoundedCornerShape(16.dp)) {
                                 Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                                        Icon(Icons.Default.MusicNote, null, modifier = Modifier.padding(11.dp).size(24.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                                    }
+                                    MusicCover(recommendation.track.artworkUri?.toString(), Modifier.size(54.dp))
                                     Column(Modifier.weight(1f).padding(start = 12.dp)) {
                                         Text(recommendation.track.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
                                         Text(recommendation.track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1)
@@ -501,9 +499,7 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                             Card(shape = RoundedCornerShape(16.dp)) {
                                 Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                                            Icon(if (result.provider == "Audius") Icons.Default.GraphicEq else Icons.Default.Cloud, null, modifier = Modifier.padding(10.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                                        }
+                                        MusicCover(result.artworkUrl, Modifier.size(64.dp))
                                         Column(Modifier.weight(1f).padding(start = 10.dp)) {
                                             Text(result.title, fontWeight = FontWeight.SemiBold, maxLines = 2)
                                             Text("${result.artist} · ${result.provider}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
@@ -513,9 +509,13 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                                             context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri))
                                         }) { Icon(Icons.Default.OpenInNew, contentDescription = "Open source page") }
                                         IconButton(onClick = {
-                                            val streamUrl = result.streamUrl
-                                            if (streamUrl != null) play(controller, Uri.parse(streamUrl), result.title, result.artist)
-                                        }, enabled = result.streamUrl != null) { Icon(Icons.Default.PlayArrow, contentDescription = "Play") }
+                                            val queue = if (result.album.isNotBlank()) {
+                                                sourceResults.filter { it.provider == result.provider && it.album == result.album && it.artist == result.artist }
+                                            } else {
+                                                sourceResults.filter { it.provider == result.provider && it.artist.equals(result.artist, true) }
+                                            }
+                                            playOnlineQueue(controller, queue.ifEmpty { listOf(result) }, result.id)
+                                        }, enabled = result.streamUrl != null) { Icon(Icons.Default.PlayArrow, contentDescription = "Play artist or album queue") }
                                     }
                                     if (!result.license.isNullOrBlank()) Text("Licence: ${result.license}", style = MaterialTheme.typography.labelSmall)
                                     if (!result.attribution.isNullOrBlank()) Text(result.attribution, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, maxLines = 3)
