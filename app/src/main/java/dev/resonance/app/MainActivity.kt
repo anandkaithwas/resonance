@@ -39,8 +39,6 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.delay
 
-private data class AudioTrack(val id: String, val title: String, val artist: String, val uri: Uri)
-
 class MainActivity : ComponentActivity() {
     private var controller by mutableStateOf<MediaController?>(null)
     private var controllerFuture: ListenableFuture<MediaController>? = null
@@ -74,7 +72,7 @@ class MainActivity : ComponentActivity() {
                 val id = c.getLong(idCol)
                 result += AudioTrack(id.toString(), c.getString(titleCol) ?: "Unknown title",
                     c.getString(artistCol)?.takeUnless { it == "<unknown>" } ?: "Unknown artist",
-                    ContentUris.withAppendedId(collection, id))
+                    ContentUris.withAppendedId(collection, id), online = false)
             }
         }
         return result
