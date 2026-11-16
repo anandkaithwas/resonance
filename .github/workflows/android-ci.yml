@@ -19,7 +19,13 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      # Explicitly request platform-tools; the action's legacy default also
+      # requests the removed SDK package named "tools".
       - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools"
+      - name: Accept Android SDK licences
+        run: yes | sdkmanager --licenses
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
       - uses: gradle/actions/setup-gradle@v4
