@@ -19,6 +19,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Newspaper
+import androidx.compose.material.icons.filled.Piano
+import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.SelfImprovement
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -100,7 +110,7 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
     val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
     var hasPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) }
     var tracks by remember { mutableStateOf(emptyList<AudioTrack>()) }
-    var tab by remember { mutableStateOf("Offline") }
+    var tab by remember { mutableStateOf("Discover") }
     var stream by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("Scan your device for local music.") }
     var title by remember { mutableStateOf("Nothing playing") }
@@ -184,9 +194,9 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
     }
 
     Scaffold(bottomBar = {
-        NavigationBar { listOf("Offline", "Radio", "Online").forEach { item ->
+        NavigationBar { listOf("Discover", "Offline", "Radio", "Online").forEach { item ->
             NavigationBarItem(selected = tab == item, onClick = { tab = item },
-                icon = { Icon(when (item) { "Offline" -> Icons.Default.LibraryMusic; "Radio" -> Icons.Default.Favorite; else -> Icons.Default.PlayArrow }, contentDescription = item) },
+                icon = { Icon(when (item) { "Discover" -> Icons.Default.AutoAwesome; "Offline" -> Icons.Default.LibraryMusic; "Radio" -> Icons.Default.Radio; else -> Icons.Default.PlayArrow }, contentDescription = item) },
                 label = { Text(item) })
         } }
     }) { padding ->
@@ -194,7 +204,75 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
             Text("RESONANCE", fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = 3.sp)
             Text("LOCAL MUSIC · ONLINE STREAMING", color = MaterialTheme.colorScheme.secondary, fontSize = 10.sp)
             Spacer(Modifier.height(18.dp))
-            if (tab == "Offline") {
+            if (tab == "Discover") {
+                val seedTrack = tracks.firstOrNull { it.id == currentTrackId }
+                    ?: listeningHistory.lastOrNull()?.let { event -> tracks.firstOrNull { it.id == event.trackId } }
+                val suggestions = LocalRecommendationEngine.recommend(seedTrack, tracks, listeningHistory, count = 20)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("For you", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                        Text("Music that learns your taste, on your device", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                    }
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                }
+                Spacer(Modifier.height(12.dp))
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(22.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.GraphicEq, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Text("  Your listening mix", fontWeight = FontWeight.Bold)
+                        }
+                        Text(if (seedTrack != null) "Built around ${seedTrack.title} by ${seedTrack.artist}" else "A fresh starting mix from your local music library", style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = {
+                            val queue = (listOfNotNull(seedTrack) + suggestions.map { it.track }).distinctBy { it.id }
+                            if (queue.isNotEmpty()) playTrackQueue(controller, queue)
+                        }, enabled = suggestions.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                            Text("  Play my mix")
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Picked for you", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.weight(1f))
+                    Text("${suggestions.size} tracks", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                }
+                if (suggestions.isEmpty()) {
+                    Card(shape = RoundedCornerShape(18.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.LibraryMusic, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
+                            Text(if (tracks.isEmpty()) "Your recommendations are waiting" else "Not enough tracks to recommend yet", fontWeight = FontWeight.Bold)
+                            Text(if (tracks.isEmpty()) "Scan your device to let RESONANCE build recommendations from your music. No account or cloud history required." else "Add more music to your library. Suggestions update as you listen.", style = MaterialTheme.typography.bodySmall)
+                            Button(onClick = { tab = "Offline"; if (hasPermission) { tracks = scan(); message = "${tracks.size} audio files found." } else permissionLauncher.launch(permission) }) {
+                                Icon(Icons.Default.LibraryMusic, null)
+                                Text("  Scan music library")
+                            }
+                        }
+                    }
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(9.dp), modifier = Modifier.weight(1f)) {
+                        items(suggestions, key = { it.track.id }) { recommendation ->
+                            Card(onClick = { playLocalQueue(controller, tracks, recommendation.track.id) }, shape = RoundedCornerShape(16.dp)) {
+                                Row(Modifier.fillMaxWidth().padding(13.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                                        Icon(Icons.Default.MusicNote, null, modifier = Modifier.padding(11.dp).size(24.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                    }
+                                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                                        Text(recommendation.track.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                        Text(recommendation.track.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                        Text(recommendation.reason, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, maxLines = 1)
+                                    }
+                                    IconButton(onClick = { playLocalQueue(controller, tracks, recommendation.track.id) }) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = "Play recommendation")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (tab == "Offline") {
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Music on this device", style = MaterialTheme.typography.titleLarge)
@@ -262,9 +340,14 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                     FilterChip(selected = radioCountry == "IN", onClick = { radioCountry = "IN"; radioTag = ""; radioLoading = true; scope.launch { runCatching { RadioBrowserRepository.search(radioQuery, "IN") }.onSuccess { radioStations = it }.onFailure { radioError = it.message ?: "Search failed" }; radioLoading = false } }, label = { Text("India") })
                     FilterChip(selected = radioCountry.isBlank(), onClick = { radioCountry = ""; radioTag = ""; radioLoading = true; scope.launch { runCatching { RadioBrowserRepository.search(radioQuery) }.onSuccess { radioStations = it }.onFailure { radioError = it.message ?: "Search failed" }; radioLoading = false } }, label = { Text("Worldwide") })
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     listOf("bollywood", "classical", "devotional", "news").forEach { tag ->
-                        FilterChip(selected = radioTag == tag, onClick = { radioTag = if (radioTag == tag) "" else tag; radioLoading = true; scope.launch { runCatching { RadioBrowserRepository.search(radioQuery, radioCountry, radioTag) }.onSuccess { radioStations = it }.onFailure { radioError = it.message ?: "Search failed" }; radioLoading = false } }, label = { Text(tag.replaceFirstChar { it.uppercase() }) })
+                        FilterChip(
+                            selected = radioTag == tag,
+                            onClick = { radioTag = if (radioTag == tag) "" else tag; radioLoading = true; scope.launch { runCatching { RadioBrowserRepository.search(radioQuery, radioCountry, radioTag) }.onSuccess { radioStations = it }.onFailure { radioError = it.message ?: "Search failed" }; radioLoading = false } },
+                            label = { Text(tag.replaceFirstChar { it.uppercase() }) },
+                            leadingIcon = { Icon(radioCategoryIcon(tag), contentDescription = null, modifier = Modifier.size(16.dp)) }
+                        )
                     }
                 }
                 Button(onClick = {
@@ -283,10 +366,13 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                     items(radioStations, key = { it.stationUuid }) { station ->
                         Card(shape = RoundedCornerShape(14.dp)) {
                             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(station.name, fontWeight = FontWeight.SemiBold)
-                                    Text(listOf(station.country, station.language, if (station.bitrate > 0) "${station.bitrate} kbps" else "").filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
-                                    if (station.tags.isNotBlank()) Text(station.tags.take(80), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                                    Icon(radioCategoryIcon(station.tags), contentDescription = "Station category", modifier = Modifier.padding(11.dp).size(25.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                                }
+                                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                                    Text(station.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                                    Text(listOf(station.country, station.language, if (station.bitrate > 0) "${station.bitrate} kbps" else "").filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                    if (station.tags.isNotBlank()) Text(station.tags.take(80), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, maxLines = 1)
                                 }
                                 IconButton(onClick = {
                                     if (radioFavorites.contains(station.stationUuid)) radioFavorites.remove(station.stationUuid) else radioFavorites.add(station.stationUuid)
@@ -348,6 +434,19 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                 }
             }
         }
+    }
+}
+
+private fun radioCategoryIcon(tags: String): ImageVector {
+    val value = tags.lowercase()
+    return when {
+        listOf("news", "talk", "spoken", "politic").any { it in value } -> Icons.Default.Newspaper
+        listOf("classical", "piano", "orchestra", "instrumental").any { it in value } -> Icons.Default.Piano
+        listOf("devotional", "religious", "spiritual", "bhajan", "gospel").any { it in value } -> Icons.Default.SelfImprovement
+        listOf("bollywood", "hindi", "indian", "filmi").any { it in value } -> Icons.Default.Language
+        listOf("electronic", "dance", "edm", "techno", "house").any { it in value } -> Icons.Default.GraphicEq
+        listOf("rock", "metal", "pop", "hits").any { it in value } -> Icons.Default.Headphones
+        else -> Icons.Default.MusicNote
     }
 }
 
