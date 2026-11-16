@@ -20,7 +20,11 @@ import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -100,6 +104,9 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
     var playing by remember { mutableStateOf(false) }
     var duration by remember { mutableLongStateOf(0L) }
     var position by remember { mutableLongStateOf(0L) }
+    var currentTrackId by remember { mutableStateOf("") }
+    var shuffleEnabled by remember { mutableStateOf(false) }
+    var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_OFF) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasPermission = granted
         if (granted) { tracks = scan(); message = "${tracks.size} audio files found." }
@@ -109,13 +116,20 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
     DisposableEffect(controller) {
         val listener = object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) { shuffleEnabled = shuffleModeEnabled }
+            override fun onRepeatModeChanged(repeatModeValue: Int) { repeatMode = repeatModeValue }
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
                 title = item?.mediaMetadata?.title?.toString() ?: "Nothing playing"
                 artist = item?.mediaMetadata?.artist?.toString() ?: ""
+                currentTrackId = item?.mediaId.orEmpty()
             }
             override fun onPlayerError(error: PlaybackException) { message = "Playback error: ${error.errorCodeName}" }
         }
-        controller?.addListener(listener)
+        controller?.let {
+            shuffleEnabled = it.shuffleModeEnabled
+            repeatMode = it.repeatMode
+            it.addListener(listener)
+        }
         onDispose { controller?.removeListener(listener) }
     }
     LaunchedEffect(controller) {
@@ -152,8 +166,29 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                 }
                 if (!hasPermission) Button(onClick = { permissionLauncher.launch(permission) }, modifier = Modifier.fillMaxWidth()) { Text("Allow access and scan") }
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+                    item {
+                        val suggestions = tracks.filter { it.id != currentTrackId && artist.isNotBlank() && it.artist.equals(artist, ignoreCase = true) }.take(5)
+                        if (suggestions.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Recommended from your library", style = MaterialTheme.typography.titleMedium)
+                                Text("More by $artist", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                                suggestions.forEach { suggested ->
+                                    Card(onClick = { playLocalQueue(controller, tracks, suggested.id) }, shape = RoundedCornerShape(12.dp)) {
+                                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.LibraryMusic, contentDescription = null)
+                                            Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                                                Text(suggested.title, fontWeight = FontWeight.SemiBold)
+                                                Text(suggested.artist, style = MaterialTheme.typography.bodySmall)
+                                            }
+                                            Icon(Icons.Default.PlayArrow, contentDescription = "Play recommendation")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     items(tracks, key = { it.id }) { track ->
-                        Card(onClick = { play(controller, track.uri, track.title, track.artist) }, shape = RoundedCornerShape(14.dp)) {
+                        Card(onClick = { playLocalQueue(controller, tracks, track.id) }, shape = RoundedCornerShape(14.dp)) {
                             Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Default.LibraryMusic, contentDescription = null)
                                 Column(Modifier.weight(1f).padding(start = 12.dp)) {
@@ -187,16 +222,46 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                     Slider(value = if (duration > 0) position.coerceIn(0L, duration).toFloat() else 0f,
                         onValueChange = { if (duration > 0) controller?.seekTo(it.toLong()) },
                         valueRange = 0f..duration.coerceAtLeast(1L).toFloat(), enabled = duration > 0)
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { controller?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }) {
+                            Icon(Icons.Default.Shuffle, contentDescription = "Shuffle", tint = if (shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        IconButton(onClick = { controller?.seekToPrevious() }) { Icon(Icons.Default.SkipPrevious, contentDescription = "Previous") }
                         IconButton(onClick = { controller?.let { if (it.isPlaying) it.pause() else it.play() } }) {
                             Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = "Play or pause")
                         }
-                        IconButton(onClick = { controller?.seekToNextMediaItem() }) { Icon(Icons.Default.SkipNext, contentDescription = "Next") }
+                        IconButton(onClick = { controller?.seekToNext() }) { Icon(Icons.Default.SkipNext, contentDescription = "Next") }
+                        IconButton(onClick = {
+                            controller?.let {
+                                it.repeatMode = when (it.repeatMode) {
+                                    Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                                    Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                                    else -> Player.REPEAT_MODE_OFF
+                                }
+                            }
+                        }) {
+                            Icon(if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                                contentDescription = when (repeatMode) { Player.REPEAT_MODE_ALL -> "Repeat all"; Player.REPEAT_MODE_ONE -> "Repeat one"; else -> "Repeat off" },
+                                tint = if (repeatMode != Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
         }
     }
+}
+
+private fun playLocalQueue(controller: MediaController?, tracks: List<AudioTrack>, startTrackId: String) {
+    if (controller == null || tracks.isEmpty()) return
+    val startIndex = tracks.indexOfFirst { it.id == startTrackId }.takeIf { it >= 0 } ?: 0
+    val items = tracks.map { track ->
+        MediaItem.Builder().setMediaId(track.id).setUri(track.uri).setMediaMetadata(
+            MediaMetadata.Builder().setTitle(track.title).setArtist(track.artist).build()
+        ).build()
+    }
+    controller.setMediaItems(items, startIndex, 0L)
+    controller.prepare()
+    controller.play()
 }
 
 private fun play(controller: MediaController?, uri: Uri, title: String, artist: String) {
