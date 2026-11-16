@@ -287,13 +287,55 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                     }
                 }
                 if (discoveryOnline.isNotEmpty()) {
-                    Text("Independent discoveries · Audius", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Artists", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    discoveryOnline.distinctBy { it.artist }.take(6).forEach { artistPick ->
+                        Card(onClick = {
+                            discoveryLoading = true
+                            scope.launch {
+                                runCatching { FreeMusicSourcesRepository.searchAudius(artistPick.artist) }
+                                    .onSuccess { discoveryOnline = it }
+                                    .onFailure { discoveryError = it.message ?: "Artist lookup failed" }
+                                discoveryLoading = false
+                            }
+                        }, shape = RoundedCornerShape(14.dp)) {
+                            Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                MusicCover(artistPick.artworkUrl, Modifier.size(48.dp))
+                                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                                    Text(artistPick.artist, fontWeight = FontWeight.SemiBold)
+                                    Text("Explore artist", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                    val albums = discoveryOnline.filter { it.album.isNotBlank() }.distinctBy { it.album + it.artist }
+                    if (albums.isNotEmpty()) {
+                        Text("Albums", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        albums.forEach { albumPick ->
+                            Card(onClick = {
+                                val albumQueue = discoveryOnline.filter { it.album == albumPick.album && it.artist == albumPick.artist }
+                                playOnlineQueue(controller, albumQueue, albumPick.id)
+                            }, shape = RoundedCornerShape(14.dp)) {
+                                Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    MusicCover(albumPick.artworkUrl, Modifier.size(52.dp))
+                                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                                        Text(albumPick.album, fontWeight = FontWeight.SemiBold)
+                                        Text(albumPick.artist, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Text("Tracks · Audius", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     discoveryOnline.forEach { result ->
                         Card(shape = RoundedCornerShape(14.dp)) {
                             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.GraphicEq, null)
-                                Column(Modifier.weight(1f).padding(start = 10.dp)) { Text(result.title, fontWeight = FontWeight.SemiBold, maxLines = 1); Text(result.artist, style = MaterialTheme.typography.bodySmall) }
-                                IconButton(onClick = { result.streamUrl?.let { play(controller, Uri.parse(it), result.title, result.artist) } }, enabled = result.streamUrl != null) { Icon(Icons.Default.PlayArrow, "Play discovery") }
+                                MusicCover(result.artworkUrl, Modifier.size(56.dp))
+                                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                                    Text(result.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    Text(result.artist, style = MaterialTheme.typography.bodySmall)
+                                    if (result.album.isNotBlank()) Text(result.album, style = MaterialTheme.typography.labelSmall)
+                                }
+                                IconButton(onClick = { playOnlineQueue(controller, discoveryOnline, result.id) }, enabled = result.streamUrl != null) { Icon(Icons.Default.PlayArrow, "Play discovery") }
                             }
                         }
                     }
