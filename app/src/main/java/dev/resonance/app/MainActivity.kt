@@ -84,17 +84,21 @@ class MainActivity : ComponentActivity() {
         val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
         if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) return emptyList()
         val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
-        val projection = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST)
+        val projection = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.ALBUM_ID)
         val result = mutableListOf<AudioTrack>()
         contentResolver.query(collection, projection, "${MediaStore.Audio.Media.IS_MUSIC} != 0", null, "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC")?.use { c ->
             val idCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
             val titleCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val artistCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+            val albumCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+            val albumIdCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
             while (c.moveToNext()) {
                 val id = c.getLong(idCol)
                 result += AudioTrack(id.toString(), c.getString(titleCol) ?: "Unknown title",
                     c.getString(artistCol)?.takeUnless { it == "<unknown>" } ?: "Unknown artist",
-                    ContentUris.withAppendedId(collection, id), online = false)
+                    ContentUris.withAppendedId(collection, id), online = false,
+                    album = c.getString(albumCol).orEmpty(),
+                    artworkUri = c.getLong(albumIdCol).takeIf { it > 0L }?.let { Uri.parse("content://media/external/audio/albumart/$it") })
             }
         }
         return result
@@ -566,11 +570,40 @@ private fun radioCategoryIcon(tags: String): ImageVector {
     }
 }
 
+@Composable
+private fun MusicCover(imageUrl: String?, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier, shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+        Box(contentAlignment = Alignment.Center) {
+            if (!imageUrl.isNullOrBlank()) {
+                AsyncImage(model = imageUrl, contentDescription = "Album cover", modifier = Modifier.fillMaxSize())
+            } else {
+                Icon(Icons.Default.MusicNote, contentDescription = "Cover artwork unavailable", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+            }
+        }
+    }
+}
+
+private fun playOnlineQueue(controller: MediaController?, results: List<OnlineMusicResult>, selectedId: String) {
+    if (controller == null || results.isEmpty()) return
+    val playable = results.filter { !it.streamUrl.isNullOrBlank() }
+    if (playable.isEmpty()) return
+    val start = playable.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
+    val items = playable.map { result ->
+        val metadata = MediaMetadata.Builder().setTitle(result.title).setArtist(result.artist)
+            .setAlbumTitle(result.album).setArtworkUri(result.artworkUrl?.let { Uri.parse(it) }).build()
+        MediaItem.Builder().setMediaId(result.id).setUri(result.streamUrl!!).setMediaMetadata(metadata).build()
+    }
+    controller.stop()
+    controller.setMediaItems(items, start, 0L)
+    controller.prepare()
+    controller.play()
+}
+
 private fun playTrackQueue(controller: MediaController?, tracks: List<AudioTrack>) {
     if (controller == null || tracks.isEmpty()) return
     val items = tracks.map { track ->
         MediaItem.Builder().setMediaId(track.id).setUri(track.uri).setMediaMetadata(
-            MediaMetadata.Builder().setTitle(track.title).setArtist(track.artist).build()
+            MediaMetadata.Builder().setTitle(track.title).setArtist(track.artist).setAlbumTitle(track.album).setArtworkUri(track.artworkUri).build()
         ).build()
     }
     controller.setMediaItems(items, 0, 0L)
