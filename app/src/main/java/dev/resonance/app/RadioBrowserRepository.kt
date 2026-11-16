@@ -34,7 +34,21 @@ object RadioBrowserRepository {
         }
 
     suspend fun registerClick(stationUuid: String) = withContext(Dispatchers.IO) {
-        runCatching { requestWithServerFallback("/json/url/${encode(stationUuid)}") }
+        val hosts = runCatching {
+            InetAddress.getAllByName(DNS_NAME).mapNotNull { address ->
+                address.canonicalHostName.lowercase().takeIf { it.endsWith(".api.radio-browser.info") && it != DNS_NAME }
+            }.distinct().shuffled()
+        }.getOrDefault(emptyList())
+        for (host in hosts) {
+            runCatching {
+                val connection = (URL("https://$host/json/url/${encode(stationUuid)}").openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                    setRequestProperty("User-Agent", USER_AGENT)
+                }
+                try { connection.responseCode in 200..299 } finally { connection.disconnect() }
+            }.onSuccess { if (it) return@withContext }
+        }
     }
 
     private fun requestWithServerFallback(path: String): List<RadioStation> {
