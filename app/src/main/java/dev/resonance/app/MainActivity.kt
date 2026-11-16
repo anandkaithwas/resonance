@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -107,6 +109,14 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
     var currentTrackId by remember { mutableStateOf("") }
     var shuffleEnabled by remember { mutableStateOf(false) }
     var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_OFF) }
+    var radioStations by remember { mutableStateOf(emptyList<RadioStation>()) }
+    var radioQuery by remember { mutableStateOf("") }
+    var radioCountry by remember { mutableStateOf("IN") }
+    var radioTag by remember { mutableStateOf("") }
+    var radioLoading by remember { mutableStateOf(false) }
+    var radioError by remember { mutableStateOf("") }
+    val radioFavorites = remember { mutableStateListOf<String>() }
+    val scope = rememberCoroutineScope()
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         hasPermission = granted
         if (granted) { tracks = scan(); message = "${tracks.size} audio files found." }
@@ -142,11 +152,24 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
     LaunchedEffect(hasPermission) {
         if (hasPermission && tracks.isEmpty()) { tracks = scan(); message = "${tracks.size} audio files found." }
     }
+    LaunchedEffect(Unit) {
+        val saved = context.getSharedPreferences("resonance_radio", android.content.Context.MODE_PRIVATE).getStringSet("favorites", emptySet()).orEmpty()
+        radioFavorites.addAll(saved)
+    }
+    LaunchedEffect(tab) {
+        if (tab == "Radio" && radioStations.isEmpty()) {
+            radioLoading = true
+            runCatching { RadioBrowserRepository.search(countryCode = radioCountry) }
+                .onSuccess { radioStations = it }
+                .onFailure { radioError = it.message ?: "Could not load radio stations" }
+            radioLoading = false
+        }
+    }
 
     Scaffold(bottomBar = {
-        NavigationBar { listOf("Offline", "Online").forEach { item ->
+        NavigationBar { listOf("Offline", "Radio", "Online").forEach { item ->
             NavigationBarItem(selected = tab == item, onClick = { tab = item },
-                icon = { Icon(if (item == "Offline") Icons.Default.LibraryMusic else Icons.Default.PlayArrow, contentDescription = item) },
+                icon = { Icon(when (item) { "Offline" -> Icons.Default.LibraryMusic; "Radio" -> Icons.Default.Favorite; else -> Icons.Default.PlayArrow }, contentDescription = item) },
                 label = { Text(item) })
         } }
     }) { padding ->
@@ -196,6 +219,53 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                                     Text(track.artist, style = MaterialTheme.typography.bodySmall)
                                 }
                                 Icon(Icons.Default.PlayArrow, contentDescription = "Play")
+                            }
+                        }
+                    }
+                }
+            } else if (tab == "Radio") {
+                Text("Internet Radio", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Free live stations from the Radio Browser directory", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = radioQuery, onValueChange = { radioQuery = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Search stations") })
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = radioCountry == "IN", onClick = { radioCountry = "IN"; radioTag = ""; radioLoading = true; scope.launch { runCatching { RadioBrowserRepository.search(radioQuery, "IN") }.onSuccess { radioStations = it }.onFailure { radioError = it.message ?: "Search failed" }; radioLoading = false } }, label = { Text("India") })
+                    FilterChip(selected = radioCountry.isBlank(), onClick = { radioCountry = ""; radioTag = ""; radioLoading = true; scope.launch { runCatching { RadioBrowserRepository.search(radioQuery) }.onSuccess { radioStations = it }.onFailure { radioError = it.message ?: "Search failed" }; radioLoading = false } }, label = { Text("Worldwide") })
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("bollywood", "classical", "devotional", "news").forEach { tag ->
+                        FilterChip(selected = radioTag == tag, onClick = { radioTag = if (radioTag == tag) "" else tag; radioLoading = true; scope.launch { runCatching { RadioBrowserRepository.search(radioQuery, radioCountry, radioTag) }.onSuccess { radioStations = it }.onFailure { radioError = it.message ?: "Search failed" }; radioLoading = false } }, label = { Text(tag.replaceFirstChar { it.uppercase() }) })
+                    }
+                }
+                Button(onClick = {
+                    radioLoading = true
+                    radioError = ""
+                    scope.launch {
+                        runCatching { RadioBrowserRepository.search(radioQuery, radioCountry, radioTag) }
+                            .onSuccess { radioStations = it }
+                            .onFailure { radioError = it.message ?: "Could not load stations" }
+                        radioLoading = false
+                    }
+                }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Refresh, null); Text("  Find stations") }
+                if (radioLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (radioError.isNotBlank()) Text(radioError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+                    items(radioStations, key = { it.stationUuid }) { station ->
+                        Card(shape = RoundedCornerShape(14.dp)) {
+                            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(station.name, fontWeight = FontWeight.SemiBold)
+                                    Text(listOf(station.country, station.language, if (station.bitrate > 0) "${station.bitrate} kbps" else "").filter { it.isNotBlank() }.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                                    if (station.tags.isNotBlank()) Text(station.tags.take(80), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                                }
+                                IconButton(onClick = {
+                                    if (radioFavorites.contains(station.stationUuid)) radioFavorites.remove(station.stationUuid) else radioFavorites.add(station.stationUuid)
+                                    context.getSharedPreferences("resonance_radio", android.content.Context.MODE_PRIVATE).edit().putStringSet("favorites", radioFavorites.toSet()).apply()
+                                }) { Icon(if (radioFavorites.contains(station.stationUuid)) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = "Toggle favourite") }
+                                IconButton(onClick = {
+                                    play(controller, Uri.parse(station.streamUrl), station.name, listOf(station.country, station.language).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Live radio" })
+                                    scope.launch { RadioBrowserRepository.registerClick(station.stationUuid) }
+                                }) { Icon(Icons.Default.PlayArrow, contentDescription = "Play station") }
                             }
                         }
                     }
