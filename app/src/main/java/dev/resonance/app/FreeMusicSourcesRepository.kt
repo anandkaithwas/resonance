@@ -17,7 +17,8 @@ data class OnlineMusicResult(
     val landingUrl: String,
     val artworkUrl: String?,
     val license: String?,
-    val attribution: String?
+    val attribution: String?,
+    val album: String = ""
 )
 
 object FreeMusicSourcesRepository {
@@ -39,7 +40,8 @@ object FreeMusicSourcesRepository {
                 val landing = item.optString("permalink").takeIf { it.startsWith("https://") }
                     ?: "https://audius.co"
                 val stream = "https://api.audius.co/v1/tracks/$id/stream?app_name=$AUDIO_APP_NAME"
-                val artwork = item.optJSONObject("artwork")?.optString("150x150")
+                val artwork = item.optJSONObject("artwork")?.optString("480x480") ?: item.optJSONObject("artwork")?.optString("150x150")
+                val album = item.optJSONObject("album")?.optString("name").orEmpty()
                 add(OnlineMusicResult(
                     id = "audius:$id",
                     title = title,
@@ -49,7 +51,8 @@ object FreeMusicSourcesRepository {
                     landingUrl = landing,
                     artworkUrl = artwork?.takeIf { it.startsWith("https://") },
                     license = item.optString("license").takeIf { it.isNotBlank() },
-                    attribution = "Listen on Audius · ${artist.ifBlank { "Creator" }}"
+                    attribution = "Listen on Audius · ${artist.ifBlank { "Creator" }}",
+                    album = album
                 ))
             }
         }
@@ -88,7 +91,8 @@ object FreeMusicSourcesRepository {
                     landingUrl = landing,
                     artworkUrl = null,
                     license = license,
-                    attribution = item.optString("attribution").ifBlank { "$title by $creator · $license" }
+                    attribution = item.optString("attribution").ifBlank { "$title by $creator · $license" },
+                    album = ""
                 ))
             }
         }
