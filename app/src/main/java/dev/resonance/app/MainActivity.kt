@@ -119,6 +119,9 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
     var sourceResults by remember { mutableStateOf(emptyList<OnlineMusicResult>()) }
     var sourceLoading by remember { mutableStateOf(false) }
     var sourceError by remember { mutableStateOf("") }
+    var discoveryOnline by remember { mutableStateOf(emptyList<OnlineMusicResult>()) }
+    var discoveryLoading by remember { mutableStateOf(false) }
+    var discoveryError by remember { mutableStateOf("") }
     var stream by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("Scan your device for local music.") }
     var title by remember { mutableStateOf("Nothing playing") }
@@ -216,6 +219,8 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                 val seedTrack = tracks.firstOrNull { it.id == currentTrackId }
                     ?: listeningHistory.lastOrNull()?.let { event -> tracks.firstOrNull { it.id == event.trackId } }
                 val suggestions = LocalRecommendationEngine.recommend(seedTrack, tracks, listeningHistory, count = 20)
+                val seedKey = seedTrack?.id.orEmpty()
+                LaunchedEffect(seedKey) { discoveryOnline = emptyList(); discoveryError = "" }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("For you", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
@@ -237,6 +242,34 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                         }, enabled = suggestions.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.PlayArrow, contentDescription = null)
                             Text("  Play my mix")
+                        }
+                    }
+                }
+                Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Cloud, null); Text("  Discover beyond your library", fontWeight = FontWeight.Bold) }
+                        Text(if (seedTrack != null) "Find independent music related to " + seedTrack.artist + " on Audius." else "Play a track to discover related independent music.", style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = {
+                            val seed = seedTrack
+                            if (seed != null) { discoveryLoading = true; discoveryError = ""; scope.launch {
+                                runCatching { FreeMusicSourcesRepository.recommendAudius(seed.artist, seed.title) }
+                                    .onSuccess { discoveryOnline = it }.onFailure { discoveryError = it.message ?: "Discovery failed" }
+                                discoveryLoading = false
+                            } }
+                        }, enabled = seedTrack != null && !discoveryLoading, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.AutoAwesome, null); Text("  Find related music") }
+                        if (discoveryLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                        if (discoveryError.isNotBlank()) Text(discoveryError, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                if (discoveryOnline.isNotEmpty()) {
+                    Text("Independent discoveries · Audius", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    discoveryOnline.forEach { result ->
+                        Card(shape = RoundedCornerShape(14.dp)) {
+                            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.GraphicEq, null)
+                                Column(Modifier.weight(1f).padding(start = 10.dp)) { Text(result.title, fontWeight = FontWeight.SemiBold, maxLines = 1); Text(result.artist, style = MaterialTheme.typography.bodySmall) }
+                                IconButton(onClick = { result.streamUrl?.let { play(controller, Uri.parse(it), result.title, result.artist) } }, enabled = result.streamUrl != null) { Icon(Icons.Default.PlayArrow, "Play discovery") }
+                            }
                         }
                     }
                 }

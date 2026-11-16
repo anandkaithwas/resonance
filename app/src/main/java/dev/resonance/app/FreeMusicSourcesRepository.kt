@@ -55,6 +55,14 @@ object FreeMusicSourcesRepository {
         }
     }
 
+    suspend fun recommendAudius(seedArtist: String, seedTitle: String): List<OnlineMusicResult> {
+        val query = if (seedArtist.isNotBlank()) seedArtist else seedTitle
+        if (query.isBlank()) return emptyList()
+        return searchAudius(query).filterNot { result ->
+            result.title.equals(seedTitle, ignoreCase = true) && result.artist.equals(seedArtist, ignoreCase = true)
+        }.distinctBy { it.id }.take(15)
+    }
+
     suspend fun searchOpenverse(query: String): List<OnlineMusicResult> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
         val url = "https://api.openverse.org/v1/audio/?q=${encode(query)}&category=music&page_size=25"
