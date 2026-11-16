@@ -44,6 +44,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.awaitCancellation
 
 class MainActivity : ComponentActivity() {
     private var controller by mutableStateOf<MediaController?>(null)
@@ -109,6 +110,7 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
     var currentTrackId by remember { mutableStateOf("") }
     var shuffleEnabled by remember { mutableStateOf(false) }
     var repeatMode by remember { mutableIntStateOf(Player.REPEAT_MODE_OFF) }
+    var listeningHistory by remember { mutableStateOf(emptyList<ListeningEvent>()) }
     var radioStations by remember { mutableStateOf(emptyList<RadioStation>()) }
     var radioQuery by remember { mutableStateOf("") }
     var radioCountry by remember { mutableStateOf("IN") }
@@ -155,6 +157,20 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
     LaunchedEffect(Unit) {
         val saved = context.getSharedPreferences("resonance_radio", android.content.Context.MODE_PRIVATE).getStringSet("favorites", emptySet()).orEmpty()
         radioFavorites.addAll(saved)
+        listeningHistory = loadListeningHistory(context)
+    }
+    LaunchedEffect(currentTrackId) {
+        if (currentTrackId.isBlank()) return@LaunchedEffect
+        val startedAt = System.currentTimeMillis()
+        try { awaitCancellation() } finally {
+            val listened = (System.currentTimeMillis() - startedAt).coerceAtLeast(0L)
+            val current = tracks.firstOrNull { it.id == currentTrackId }
+            if (current != null && listened > 0L) {
+                val event = ListeningEvent(current.id, current.artist, startedAt, listened, listened < 30_000L)
+                listeningHistory = (listeningHistory + event).takeLast(500)
+                saveListeningHistory(context, listeningHistory)
+            }
+        }
     }
     LaunchedEffect(tab) {
         if (tab == "Radio" && radioStations.isEmpty()) {
@@ -190,18 +206,31 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                 if (!hasPermission) Button(onClick = { permissionLauncher.launch(permission) }, modifier = Modifier.fillMaxWidth()) { Text("Allow access and scan") }
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
                     item {
-                        val suggestions = tracks.filter { it.id != currentTrackId && artist.isNotBlank() && it.artist.equals(artist, ignoreCase = true) }.take(5)
+                        val seedTrack = tracks.firstOrNull { it.id == currentTrackId }
+                            ?: listeningHistory.lastOrNull()?.let { event -> tracks.firstOrNull { it.id == event.trackId } }
+                        val suggestions = LocalRecommendationEngine.recommend(seedTrack, tracks, listeningHistory, count = 8)
                         if (suggestions.isNotEmpty()) {
                             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text("Recommended from your library", style = MaterialTheme.typography.titleMedium)
-                                Text("More by $artist", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
-                                suggestions.forEach { suggested ->
+                                Text("Picked for you", style = MaterialTheme.typography.titleMedium)
+                                Text(if (seedTrack != null) "Based on your listening around ${seedTrack.title}" else "A rotating mix from your music", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                                if (seedTrack != null) {
+                                    OutlinedButton(onClick = {
+                                        val queue = listOf(seedTrack) + suggestions.map { it.track }
+                                        playTrackQueue(controller, queue)
+                                    }, modifier = Modifier.fillMaxWidth()) {
+                                        Icon(Icons.Default.PlayArrow, null)
+                                        Text("  Start a radio from ${seedTrack.title}")
+                                    }
+                                }
+                                suggestions.forEach { recommendation ->
+                                    val suggested = recommendation.track
                                     Card(onClick = { playLocalQueue(controller, tracks, suggested.id) }, shape = RoundedCornerShape(12.dp)) {
                                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                             Icon(Icons.Default.LibraryMusic, contentDescription = null)
                                             Column(Modifier.weight(1f).padding(start = 10.dp)) {
                                                 Text(suggested.title, fontWeight = FontWeight.SemiBold)
                                                 Text(suggested.artist, style = MaterialTheme.typography.bodySmall)
+                                                Text(recommendation.reason, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
                                             }
                                             Icon(Icons.Default.PlayArrow, contentDescription = "Play recommendation")
                                         }
@@ -319,6 +348,37 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
             }
         }
     }
+}
+
+private fun playTrackQueue(controller: MediaController?, tracks: List<AudioTrack>) {
+    if (controller == null || tracks.isEmpty()) return
+    val items = tracks.map { track ->
+        MediaItem.Builder().setMediaId(track.id).setUri(track.uri).setMediaMetadata(
+            MediaMetadata.Builder().setTitle(track.title).setArtist(track.artist).build()
+        ).build()
+    }
+    controller.setMediaItems(items, 0, 0L)
+    controller.prepare()
+    controller.play()
+}
+
+private fun loadListeningHistory(context: android.content.Context): List<ListeningEvent> {
+    val raw = context.getSharedPreferences("resonance_history", android.content.Context.MODE_PRIVATE).getString("events", "[]") ?: "[]"
+    return runCatching {
+        val array = org.json.JSONArray(raw)
+        (0 until array.length()).mapNotNull { i ->
+            val item = array.optJSONObject(i) ?: return@mapNotNull null
+            ListeningEvent(item.optString("id"), item.optString("artist"), item.optLong("at"), item.optLong("ms"), item.optBoolean("skipped"))
+        }
+    }.getOrDefault(emptyList())
+}
+
+private fun saveListeningHistory(context: android.content.Context, events: List<ListeningEvent>) {
+    val array = org.json.JSONArray()
+    events.takeLast(500).forEach { event ->
+        array.put(org.json.JSONObject().put("id", event.trackId).put("artist", event.artist).put("at", event.playedAt).put("ms", event.listenedMs).put("skipped", event.skipped))
+    }
+    context.getSharedPreferences("resonance_history", android.content.Context.MODE_PRIVATE).edit().putString("events", array.toString()).apply()
 }
 
 private fun playLocalQueue(controller: MediaController?, tracks: List<AudioTrack>, startTrackId: String) {
