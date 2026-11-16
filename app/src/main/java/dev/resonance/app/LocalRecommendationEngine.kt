@@ -88,7 +88,7 @@ object LocalRecommendationEngine {
         return output
     }
 
-    private fun coListenWeights(events: List<ListeningEvent>): Map<String, Map<String, Double>> {
+    fun coListenWeights(events: List<ListeningEvent>): Map<String, Map<String, Double>> {
         val result = mutableMapOf<String, MutableMap<String, Double>>()
         val sorted = events.sortedBy { it.playedAt }
         var sessionStart = 0
