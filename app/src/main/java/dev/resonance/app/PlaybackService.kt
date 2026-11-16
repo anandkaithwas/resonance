@@ -4,21 +4,22 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
-/** Keeps audio playback alive independently of the Activity. */
+/** Keeps playback alive when the Activity is backgrounded. */
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
 
     override fun onCreate() {
         super.onCreate()
-        session = MediaSession.Builder(this, ExoPlayer.Builder(this).build()).build()
+        val player = ExoPlayer.Builder(this).build()
+        session = MediaSession.Builder(this, player).build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onDestroy() {
-        session?.run {
-            player.release()
-            release()
+        session?.let {
+            it.player.release()
+            it.release()
         }
         session = null
         super.onDestroy()

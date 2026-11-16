@@ -1,30 +1,28 @@
 # M1 — Offline and online playback
 
-## Included in this milestone
-
+## Implemented in this milestone
 - Local audio discovery through Android MediaStore.
-- Runtime permission handling for Android 13+ (READ_MEDIA_AUDIO) and Android 10–12 (READ_EXTERNAL_STORAGE).
-- Local content URIs are played in place; RESONANCE does not copy local music.
-- User-entered HTTPS media URLs for direct audio streams and compatible internet radio.
-- Media3 ExoPlayer hosted in a MediaSessionService so playback can continue outside the Activity.
-- Basic play/pause, next-item and seek controls.
+- Runtime permission handling: READ_MEDIA_AUDIO on Android 13+ and READ_EXTERNAL_STORAGE on Android 10–12.
+- Local content URIs are played without copying the user's audio files.
+- Online playback accepts user-entered HTTPS media URLs, including directly playable hosted audio and compatible internet-radio streams.
+- Media3 ExoPlayer runs inside MediaSessionService for background playback and Android media-session integration.
+- Basic controls: play/pause, next queue item, seek when the source exposes a seekable duration.
+- Playback errors are surfaced with Media3 error codes.
 
-## Scope and restrictions
+## Deliberate limits
+- An HTTPS webpage is not necessarily an audio stream. The URL must resolve to media that Media3 can decode.
+- This is not yet online catalogue search or account integration. Provider-specific integrations require documented APIs, authentication, attribution, playback permissions and terms review.
+- No YouTube scraping, DRM circumvention or unauthorised stream extraction.
+- This initial UI plays one selected item at a time. Queue management, artwork, persistent resume position, advanced audio focus tests, headset controls, Bluetooth routing and downloads remain future work.
+- Online URLs are streamed, not downloaded for offline use. Downloading requires source licence and caching-permission checks.
 
-- A webpage URL is not necessarily an audio stream. The URL must resolve to a Media3-supported media resource.
-- This is not yet an online catalogue search or provider account integration.
-- No YouTube scraping, DRM circumvention, or unauthorised stream extraction.
-- Online streams are streamed, not downloaded. Offline downloads require source-specific caching rights.
-- Queue management, robust error UI, audio focus and headset testing, Bluetooth routing, artwork, lyrics and persistence are follow-up work.
-
-## Device test checklist
-
-1. Install on Android 10, Android 13 and Android 14+.
-2. Deny audio permission and verify online input remains available.
-3. Grant permission and verify local tracks appear.
-4. Start a local track, lock the screen and verify continued playback.
+## Device validation required
+1. Test Android 10, 13 and 14+.
+2. Deny audio permission and verify online streams remain available.
+3. Grant audio permission and verify local tracks appear.
+4. Play a local track, lock the screen and verify playback continues.
 5. Verify notification and lock-screen media controls.
-6. Test a known public HTTPS audio stream and an invalid URL.
-7. Test pause/resume, seeking, audio focus interruptions, headset disconnect and Bluetooth routing.
+6. Play a known public HTTPS audio stream; test invalid URLs and unsupported codecs.
+7. Test pause/resume, next, seeking, audio focus interruptions and Bluetooth routing.
 
-CI build and physical-device testing are required before this milestone is considered verified.
+A successful CI build and physical-device test are required before calling this production-ready.
