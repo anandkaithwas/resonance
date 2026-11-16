@@ -234,6 +234,26 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                     Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
                 }
                 Spacer(Modifier.height(12.dp))
+                Text("Explore by mood & occasion", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                val moods = listOf("Happy", "Chill", "Focus", "Workout", "Romantic", "Party", "Travel", "Devotional", "Sleep", "Sad")
+                moods.chunked(5).forEach { rowMoods ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        rowMoods.forEach { mood ->
+                            FilterChip(selected = false, onClick = {
+                                discoveryLoading = true
+                                discoveryError = ""
+                                scope.launch {
+                                    runCatching { FreeMusicSourcesRepository.searchAudius(mood.lowercase()) }
+                                        .onSuccess { discoveryOnline = it }
+                                        .onFailure { discoveryError = it.message ?: "Could not load mood" }
+                                    discoveryLoading = false
+                                }
+                            }, label = { Text(mood) })
+                        }
+                    }
+                }
+                if (discoveryLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (discoveryError.isNotBlank()) Text(discoveryError, color = MaterialTheme.colorScheme.error)
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(22.dp)) {
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
