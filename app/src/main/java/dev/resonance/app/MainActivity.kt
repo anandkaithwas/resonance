@@ -28,6 +28,9 @@ import androidx.compose.material.icons.filled.Piano
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.SelfImprovement
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -111,6 +114,11 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
     var hasPermission by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) }
     var tracks by remember { mutableStateOf(emptyList<AudioTrack>()) }
     var tab by remember { mutableStateOf("Discover") }
+    var sourceQuery by remember { mutableStateOf("") }
+    var sourceProvider by remember { mutableStateOf("Audius") }
+    var sourceResults by remember { mutableStateOf(emptyList<OnlineMusicResult>()) }
+    var sourceLoading by remember { mutableStateOf(false) }
+    var sourceError by remember { mutableStateOf("") }
     var stream by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("Scan your device for local music.") }
     var title by remember { mutableStateOf("Nothing playing") }
@@ -194,9 +202,9 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
     }
 
     Scaffold(bottomBar = {
-        NavigationBar { listOf("Discover", "Offline", "Radio", "Online").forEach { item ->
+        NavigationBar { listOf("Discover", "Offline", "Radio", "Sources").forEach { item ->
             NavigationBarItem(selected = tab == item, onClick = { tab = item },
-                icon = { Icon(when (item) { "Discover" -> Icons.Default.AutoAwesome; "Offline" -> Icons.Default.LibraryMusic; "Radio" -> Icons.Default.Radio; else -> Icons.Default.PlayArrow }, contentDescription = item) },
+                icon = { Icon(when (item) { "Discover" -> Icons.Default.AutoAwesome; "Offline" -> Icons.Default.LibraryMusic; "Radio" -> Icons.Default.Radio; else -> Icons.Default.Cloud }, contentDescription = item) },
                 label = { Text(item) })
         } }
     }) { padding ->
@@ -386,6 +394,80 @@ private fun PlayerApp(controller: MediaController?, scan: () -> List<AudioTrack>
                         }
                     }
                 }
+            } else if (tab == "Sources") {
+                Text("Music Sources", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                Text("Search independent and openly licensed music catalogues", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = sourceQuery, onValueChange = { sourceQuery = it },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true,
+                    label = { Text("Search songs, artists or genres") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) }
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = sourceProvider == "Audius", onClick = { sourceProvider = "Audius" }, label = { Text("Audius") })
+                    FilterChip(selected = sourceProvider == "Openverse", onClick = { sourceProvider = "Openverse" }, label = { Text("Openly licensed") })
+                }
+                Button(
+                    onClick = {
+                        sourceLoading = true
+                        sourceError = ""
+                        scope.launch {
+                            runCatching {
+                                if (sourceProvider == "Audius") FreeMusicSourcesRepository.searchAudius(sourceQuery)
+                                else FreeMusicSourcesRepository.searchOpenverse(sourceQuery)
+                            }.onSuccess { sourceResults = it }
+                             .onFailure { sourceError = it.message ?: "Search failed" }
+                            sourceLoading = false
+                        }
+                    },
+                    enabled = sourceQuery.isNotBlank() && !sourceLoading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Search, null)
+                    Text("  Search ${sourceProvider}")
+                }
+                if (sourceLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (sourceError.isNotBlank()) Text(sourceError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                if (sourceResults.isEmpty() && !sourceLoading) {
+                    Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Default.Cloud, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+                            Text("Explore independent music", fontWeight = FontWeight.Bold)
+                            Text("Audius offers an open music catalogue. Openverse searches openly licensed audio and displays its licence and attribution details.", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                } else {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+                        items(sourceResults, key = { it.id }) { result ->
+                            Card(shape = RoundedCornerShape(16.dp)) {
+                                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                                            Icon(if (result.provider == "Audius") Icons.Default.GraphicEq else Icons.Default.Cloud, null, modifier = Modifier.padding(10.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                        }
+                                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                                            Text(result.title, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                                            Text("${result.artist} · ${result.provider}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                                        }
+                                        IconButton(onClick = {
+                                            val uri = Uri.parse(result.landingUrl)
+                                            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri))
+                                        }) { Icon(Icons.Default.OpenInNew, contentDescription = "Open source page") }
+                                        IconButton(onClick = {
+                                            val streamUrl = result.streamUrl
+                                            if (streamUrl != null) play(controller, Uri.parse(streamUrl), result.title, result.artist)
+                                        }, enabled = result.streamUrl != null) { Icon(Icons.Default.PlayArrow, contentDescription = "Play") }
+                                    }
+                                    if (!result.license.isNullOrBlank()) Text("Licence: ${result.license}", style = MaterialTheme.typography.labelSmall)
+                                    if (!result.attribution.isNullOrBlank()) Text(result.attribution, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary, maxLines = 3)
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text("More services: Spotify and YouTube use official app hand-off; SoundCloud and Jamendo require provider-approved app credentials and attribution before direct playback can be enabled.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
             } else {
                 Text("Play an online stream", style = MaterialTheme.typography.titleLarge)
                 Text("Paste a direct HTTPS audio URL or authorised internet-radio stream. Webpage links are not necessarily playable media.", style = MaterialTheme.typography.bodySmall)
