@@ -31,8 +31,9 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
-import import dev.resonance.app.playback.PlaybackService
+import dev.resonance.app.playback.PlaybackService
 import dev.resonance.app.ui.components.AurixTopBar
+
 private val AurixDarkColorScheme = darkColorScheme(
     primary = Color(0xFF22D3EE),
     secondary = Color(0xFFA855F7),
