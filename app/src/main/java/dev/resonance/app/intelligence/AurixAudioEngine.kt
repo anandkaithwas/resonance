@@ -1,8 +1,6 @@
 package dev.resonance.app.intelligence
 
-import kotlin.math.abs
-import kotlin.math.max
-import kotlin.math.min
+import kotlin.math.pow
 import kotlin.math.sqrt
 
 enum class AurixMood { CALM, BALANCED, ENERGETIC }
@@ -30,7 +28,7 @@ class AurixAudioEngine {
     private var smoothedTrebleGain = 0f
     var enabled: Boolean = true
     var reality: SoundReality = SoundReality.NATURAL
-    var latestInsight: AudioInsight = AudioInsight(0f, 0f, 0f, 0f, AurixMood.BALANCED, reality, floatArrayOf(0f,0f,0f))
+    var latestInsight: AudioInsight = AudioInsight(0f, 0f, 0f, 0f, AurixMood.BALANCED, reality, floatArrayOf(0f, 0f, 0f))
         private set
 
     fun process(input: ShortArray, sampleRate: Int, channels: Int): ShortArray {
@@ -84,16 +82,16 @@ class AurixAudioEngine {
             SoundReality.CINEMA -> 1.2f
             else -> (0.35f - treble * 5f).coerceIn(-1.5f, 1.5f)
         }
-        // Slow gain movement prevents audible pumping between adjacent PCM buffers.
+        // Smooth gain movement to reduce audible pumping between adjacent PCM buffers.
         smoothedBassGain += (targetBass - smoothedBassGain) * 0.12f
         smoothedMidGain += (targetMid - smoothedMidGain) * 0.12f
         smoothedTrebleGain += (targetTreble - smoothedTrebleGain) * 0.12f
         val gains = floatArrayOf(smoothedBassGain, smoothedMidGain, smoothedTrebleGain)
         latestInsight = AudioInsight(rms, bass, mid, treble, mood, reality, gains)
         if (!enabled) return input.copyOf()
-        val bg = dbToGain(smoothedBassGain)
-        val mg = dbToGain(smoothedMidGain)
-        val tg = dbToGain(smoothedTrebleGain)
+        val bg = 10f.pow(smoothedBassGain / 20f)
+        val mg = 10f.pow(smoothedMidGain / 20f)
+        val tg = 10f.pow(smoothedTrebleGain / 20f)
         return ShortArray(input.size) { i ->
             val y = lows[i] * bg + mids[i] * mg + highs[i] * tg
             (y.coerceIn(-0.98f, 0.98f) * 32767f).toInt().toShort()
@@ -101,12 +99,11 @@ class AurixAudioEngine {
     }
 
     fun reset() {
-        lowState = 0f; midState = 0f
-        smoothedBassGain = 0f; smoothedMidGain = 0f; smoothedTrebleGain = 0f
-        latestInsight = AudioInsight(0f,0f,0f,0f,AurixMood.BALANCED,reality,floatArrayOf(0f,0f,0f))
+        lowState = 0f
+        midState = 0f
+        smoothedBassGain = 0f
+        smoothedMidGain = 0f
+        smoothedTrebleGain = 0f
+        latestInsight = AudioInsight(0f, 0f, 0f, 0f, AurixMood.BALANCED, reality, floatArrayOf(0f, 0f, 0f))
     }
-
-    private fun dbToGain(db: Float): Float = 10f.pow(db / 20f)
 }
-
-private fun Float.pow(power: Float): Float = kotlin.math.pow(this, power)
