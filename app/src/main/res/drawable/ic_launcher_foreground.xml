@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="&#104;&#116;&#116;&#112;://://android.com"
-    xmlns:aapt="&#104;&#116;&#116;&#112;://://android.com"
+<vector xmlns:android="&#104;&#116;&#116;&#112;&#58;&#47;&#47;&#115;&#99;&#104;&#101;&#109;&#97;&#115;&#46;&#97;&#110;&#100;&#114;&#111;&#105;&#100;&#46;&#99;&#111;&#109;&#47;&#97;&#112;&#107;&#47;&#114;&#101;&#115;&#47;&#97;&#110;&#100;&#114;&#111;&#105;&#100;"
+    xmlns:aapt="&#104;&#116;&#116;&#112;&#58;&#47;&#47;&#115;&#99;&#104;&#101;&#109;&#97;&#115;&#46;&#97;&#110;&#100;&#114;&#111;&#105;&#100;&#46;&#99;&#111;&#109;&#47;&#97;&#97;&#112;&#116;"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
@@ -23,15 +23,9 @@
                     android:startX="14"
                     android:startY="14"
                     android:type="linear">
-                    <item
-                        android:color="#22D3EE"
-                        android:offset="0.0" />
-                    <item
-                        android:color="#6366F1"
-                        android:offset="0.5" />
-                    <item
-                        android:color="#A855F7"
-                        android:offset="1.0" />
+                    <item android:color="#22D3EE" android:offset="0.0" />
+                    <item android:color="#6366F1" android:offset="0.5" />
+                    <item android:color="#A855F7" android:offset="1.0" />
                 </gradient>
             </aapt:attr>
         </path>
@@ -47,12 +41,8 @@
                     android:startX="22"
                     android:startY="22"
                     android:type="linear">
-                    <item
-                        android:color="#22D3EE"
-                        android:offset="0.0" />
-                    <item
-                        android:color="#A855F7"
-                        android:offset="1.0" />
+                    <item android:color="#22D3EE" android:offset="0.0" />
+                    <item android:color="#A855F7" android:offset="1.0" />
                 </gradient>
             </aapt:attr>
         </path>
@@ -68,12 +58,8 @@
                     android:startX="35"
                     android:startY="32"
                     android:type="linear">
-                    <item
-                        android:color="#38BDF8"
-                        android:offset="0.0" />
-                    <item
-                        android:color="#C084FC"
-                        android:offset="1.0" />
+                    <item android:color="#38BDF8" android:offset="0.0" />
+                    <item android:color="#C084FC" android:offset="1.0" />
                 </gradient>
             </aapt:attr>
         </path>
@@ -89,12 +75,8 @@
                     android:startX="48"
                     android:startY="44"
                     android:type="linear">
-                    <item
-                        android:color="#22D3EE"
-                        android:offset="0.0" />
-                    <item
-                        android:color="#A855F7"
-                        android:offset="1.0" />
+                    <item android:color="#22D3EE" android:offset="0.0" />
+                    <item android:color="#A855F7" android:offset="1.0" />
                 </gradient>
             </aapt:attr>
         </path>
