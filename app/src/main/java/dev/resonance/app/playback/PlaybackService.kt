@@ -14,6 +14,7 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import dev.resonance.app.intelligence.AurixAudioEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.nio.ByteBuffer
@@ -24,41 +25,43 @@ import kotlin.math.sqrt
 object ResonanceVisualizerTap : BaseAudioProcessor() {
     private val _amplitudes = MutableStateFlow(FloatArray(32) { 0f })
     val amplitudes: StateFlow<FloatArray> = _amplitudes
+    private val _insight = MutableStateFlow(AurixAudioEngine().latestInsight)
+    val insight: StateFlow<dev.resonance.app.intelligence.AudioInsight> = _insight
+    val intelligence = AurixAudioEngine()
     private var channelCount = 1
+    private var sampleRate = 44100
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
-        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
-            return AudioProcessor.AudioFormat.NOT_SET
-        }
+        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) return AudioProcessor.AudioFormat.NOT_SET
         channelCount = inputAudioFormat.channelCount.coerceAtLeast(1)
+        sampleRate = inputAudioFormat.sampleRate.coerceAtLeast(1)
         return inputAudioFormat
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
-        val duplicate = inputBuffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
-        val totalSamples = duplicate.remaining() / 2
-        val frames = totalSamples / channelCount
-        val bins = FloatArray(32)
-        for (bin in bins.indices) {
-            val startFrame = frames * bin / bins.size
-            val endFrame = frames * (bin + 1) / bins.size
-            var sumSquares = 0.0
-            var count = 0
-            for (frame in startFrame until endFrame) {
-                repeat(channelCount) {
-                    if (duplicate.remaining() >= 2) {
-                        val sample = duplicate.short.toDouble() / Short.MAX_VALUE
-                        sumSquares += sample * sample
-                        count++
-                    }
-                }
+        val source = inputBuffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+        val sampleCount = source.remaining() / 2
+        val samples = ShortArray(sampleCount)
+        for (i in samples.indices) samples[i] = source.short
+        val processed = intelligence.process(samples, sampleRate, channelCount)
+
+        val visual = FloatArray(32)
+        for (bin in visual.indices) {
+            val start = processed.size * bin / visual.size
+            val end = processed.size * (bin + 1) / visual.size
+            var sum = 0.0
+            for (i in start until end) {
+                val value = processed[i] / 32768.0
+                sum += value * value
             }
-            bins[bin] = if (count == 0) 0f else sqrt(sumSquares / count).toFloat().coerceIn(0f, 1f)
+            visual[bin] = if (end <= start) 0f else sqrt(sum / (end - start)).toFloat().coerceIn(0f, 1f)
         }
-        _amplitudes.value = bins
-        val outputBuffer = replaceOutputBuffer(inputBuffer.remaining())
-        outputBuffer.put(inputBuffer)
-        outputBuffer.flip()
+        _amplitudes.value = visual
+        _insight.value = intelligence.latestInsight
+
+        val output = replaceOutputBuffer(processed.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+        processed.forEach { output.putShort(it) }
+        output.flip()
     }
 }
 
