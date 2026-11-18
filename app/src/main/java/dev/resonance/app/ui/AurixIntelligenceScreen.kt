@@ -14,6 +14,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.resonance.app.intelligence.SoundReality
@@ -24,6 +27,8 @@ import java.util.Locale
 fun AurixIntelligenceScreen() {
     val engine = ResonanceVisualizerTap.intelligence
     val insight by ResonanceVisualizerTap.insight.collectAsState()
+    var eqEnabled by remember { mutableStateOf(engine.enabled) }
+    var selectedScene by remember { mutableStateOf(engine.reality) }
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -35,9 +40,12 @@ fun AurixIntelligenceScreen() {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column {
                         Text("MoodSync · Dynamic EQ", style = MaterialTheme.typography.titleMedium)
-                        Text(if (engine.enabled) "Adapting to the live audio signal" else "DSP bypassed")
+                        Text(if (eqEnabled) "Adapting to the live audio signal" else "DSP bypassed")
                     }
-                    Switch(checked = engine.enabled, onCheckedChange = { engine.enabled = it })
+                    Switch(checked = eqEnabled, onCheckedChange = {
+                        eqEnabled = it
+                        engine.enabled = it
+                    })
                 }
                 Text("Detected mood: ${insight.mood.name.lowercase().replace('_', ' ')}")
                 Text("EQ · Bass ${String.format(Locale.US, "%.1f", insight.gainsDb[0])} dB  ·  Mid ${String.format(Locale.US, "%.1f", insight.gainsDb[1])} dB  ·  Treble ${String.format(Locale.US, "%.1f", insight.gainsDb[2])} dB")
@@ -46,18 +54,18 @@ fun AurixIntelligenceScreen() {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Reality · Sound scenes", style = MaterialTheme.typography.titleMedium)
-                Text("Select a local DSP curve. These are sound profiles, not room simulation.")
+                Text("Local DSP curves, not acoustic room simulation.")
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     SoundReality.entries.take(2).forEach { scene ->
-                        Button(onClick = { engine.reality = scene }) { Text(scene.name) }
+                        Button(onClick = { selectedScene = scene; engine.reality = scene }) { Text(scene.name) }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     SoundReality.entries.drop(2).forEach { scene ->
-                        Button(onClick = { engine.reality = scene }) { Text(scene.name) }
+                        Button(onClick = { selectedScene = scene; engine.reality = scene }) { Text(scene.name) }
                     }
                 }
-                Text("Active scene: ${insight.scene.name}")
+                Text("Selected scene: ${selectedScene.name}")
             }
         }
         Card(Modifier.fillMaxWidth()) {
@@ -73,7 +81,7 @@ fun AurixIntelligenceScreen() {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("SoundUniverse", style = MaterialTheme.typography.titleMedium)
-                Text("The existing visualiser remains available in the Visualiser tab. This engine now publishes post-EQ audio insights for its next reactive visual layer.")
+                Text("The existing visualiser remains available in the Visualiser tab. The engine publishes post-EQ audio insights for its next reactive visual layer.")
                 Text("SmartMix and offline voice-command recognition are not enabled in this phase.")
             }
         }
