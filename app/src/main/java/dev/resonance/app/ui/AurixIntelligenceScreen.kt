@@ -18,17 +18,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import dev.resonance.app.intelligence.MusicDnaStore
 import dev.resonance.app.intelligence.SoundReality
 import dev.resonance.app.playback.ResonanceVisualizerTap
 import java.util.Locale
 
 @Composable
-fun AurixIntelligenceScreen() {
+fun AurixIntelligenceScreen(trackId: String = "", title: String = "", artist: String = "") {
+    val context = LocalContext.current
     val engine = ResonanceVisualizerTap.intelligence
     val insight by ResonanceVisualizerTap.insight.collectAsState()
+    val dnaStore = remember(context) { MusicDnaStore(context) }
     var eqEnabled by remember { mutableStateOf(engine.enabled) }
     var selectedScene by remember { mutableStateOf(engine.reality) }
+    var saveStatus by remember { mutableStateOf("MusicDNA profiles are stored locally on this device.") }
+    val profiles = remember(insight, trackId) { dnaStore.profiles() }
+
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -70,19 +77,29 @@ fun AurixIntelligenceScreen() {
         }
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("MusicDNA · Live fingerprint", style = MaterialTheme.typography.titleMedium)
+                Text("MusicDNA · Track fingerprint", style = MaterialTheme.typography.titleMedium)
+                Text("Current: ${title.ifBlank { "No track selected" }}")
                 Text("Bass energy  ${(insight.bass * 100).toInt()}%")
                 Text("Mid energy  ${(insight.mid * 100).toInt()}%")
                 Text("Treble energy  ${(insight.treble * 100).toInt()}%")
                 Text("Signal level  ${(insight.rms * 100).toInt()}%")
-                Text("Track-level BPM, key and saved similarity profiles are planned next.")
+                Button(
+                    enabled = trackId.isNotBlank() && insight.rms > 0f,
+                    onClick = {
+                        dnaStore.save(trackId, title, artist, insight)
+                        saveStatus = "Saved fingerprint for $title"
+                    }
+                ) { Text("Save MusicDNA Profile") }
+                Text(saveStatus, style = MaterialTheme.typography.bodySmall)
+                Text("Saved local profiles: ${profiles.size}")
+                Text("This fingerprint records spectral energy and signal level. BPM, key and semantic similarity are not yet calculated.")
             }
         }
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("SoundUniverse", style = MaterialTheme.typography.titleMedium)
-                Text("The existing visualiser remains available in the Visualiser tab. The engine publishes post-EQ audio insights for its next reactive visual layer.")
-                Text("SmartMix and offline voice-command recognition are not enabled in this phase.")
+                Text("The existing visualiser remains available in the Visualiser tab. The engine publishes post-EQ audio insights for its reactive visual layer.")
+                Text("SmartMix queue builder is available in the AI DJ tab. Beat-matched dual-deck transitions are not yet implemented.")
             }
         }
     }

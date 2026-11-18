@@ -197,7 +197,7 @@ fun AurixApp() {
                         tracks = LocalAudioScanner.scanAllTracks(context)
                     }
                 })
-                5 -> AurixIntelligenceScreen()
+                5 -> AurixIntelligenceScreen(trackId = currentTrackId, title = currentTrackTitle, artist = controller?.currentMediaItem?.mediaMetadata?.artist?.toString().orEmpty())
             }
         }
     }
