@@ -59,6 +59,7 @@ fun AurixApp() {
     var title by remember { mutableStateOf("Nothing Playing") }
     var isPlaying by remember { mutableStateOf(false) }
     var tab by remember { mutableIntStateOf(0) }
+    var playbackConnectionError by remember { mutableStateOf<String?>(null) }
     val currentTrackId = controller?.currentMediaItem?.mediaId.orEmpty()
     val currentTrackTitle = controller?.currentMediaItem?.mediaMetadata?.title?.toString() ?: title
     var libraryPermissionGranted by remember {
@@ -88,39 +89,55 @@ fun AurixApp() {
     }
 
     DisposableEffect(context) {
-        val future = MediaController.Builder(
-            context,
-            SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        ).buildAsync()
-        val listener = Runnable {
-            if (future.isDone && !future.isCancelled) {
-                runCatching { future.get() }.onSuccess { mediaController ->
-                    controller = mediaController
-                    mediaController.addListener(object : Player.Listener {
-                        override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
-                        override fun onMediaMetadataChanged(meta: MediaMetadata) {
-                            title = meta.title?.toString() ?: "Streaming Audio"
+        val future = runCatching {
+            MediaController.Builder(
+                context,
+                SessionToken(context, ComponentName(context, PlaybackService::class.java))
+            ).buildAsync()
+        }.onFailure {
+            playbackConnectionError = "Playback service could not start: ${it.message ?: it.javaClass.simpleName}"
+        }.getOrNull()
+
+        if (future != null) {
+            val listener = Runnable {
+                if (future.isDone && !future.isCancelled) {
+                    runCatching { future.get() }
+                        .onSuccess { mediaController ->
+                            controller = mediaController
+                            playbackConnectionError = null
+                            mediaController.addListener(object : Player.Listener {
+                                override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
+                                override fun onMediaMetadataChanged(meta: MediaMetadata) {
+                                    title = meta.title?.toString() ?: "Streaming Audio"
+                                }
+                                override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+                                    title = item?.mediaMetadata?.title?.toString() ?: "Streaming Audio"
+                                }
+                            })
+                            isPlaying = mediaController.isPlaying
+                            title = mediaController.currentMediaItem?.mediaMetadata?.title?.toString()
+                                ?: "Nothing Playing"
                         }
-                        override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-                            title = item?.mediaMetadata?.title?.toString() ?: "Streaming Audio"
+                        .onFailure {
+                            playbackConnectionError = "Playback service connection failed: ${it.message ?: it.javaClass.simpleName}"
                         }
-                    })
-                    isPlaying = mediaController.isPlaying
-                    title = mediaController.currentMediaItem?.mediaMetadata?.title?.toString()
-                        ?: "Nothing Playing"
                 }
             }
+            future.addListener(listener, ContextCompat.getMainExecutor(context))
         }
-        future.addListener(listener, ContextCompat.getMainExecutor(context))
+
         onDispose {
             controller?.release()
-            MediaController.releaseFuture(future)
+            future?.let { MediaController.releaseFuture(it) }
             controller = null
         }
     }
 
     LaunchedEffect(libraryPermissionGranted) {
-        if (libraryPermissionGranted) tracks = LocalAudioScanner.scanAllTracks(context)
+        if (libraryPermissionGranted) {
+            runCatching { LocalAudioScanner.scanAllTracks(context) }
+                .onSuccess { tracks = it }
+        }
     }
 
     Scaffold(
@@ -164,40 +181,58 @@ fun AurixApp() {
             }
         }
     ) { pad ->
-        Box(Modifier.fillMaxSize().padding(pad)) {
-            when (tab) {
-                0 -> LibraryAndStreamTab(
-                    tracks = tracks,
-                    onRequestLibraryPermission = {
-                        if (!libraryPermissionGranted) permissionLauncher.launch(audioPermission)
-                    },
-                    onPlayTrack = { i ->
-                        controller?.apply {
-                            setMediaItems(tracks.map { it.toMediaItem() }, i, 0L)
-                            prepare()
-                            play()
+        Column(Modifier.fillMaxSize().padding(pad)) {
+            playbackConnectionError?.let { message ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                ) {
+                    Text(
+                        message + " — Library and other screens remain available.",
+                        modifier = Modifier.padding(12.dp),
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when (tab) {
+                    0 -> LibraryAndStreamTab(
+                        tracks = tracks,
+                        onRequestLibraryPermission = {
+                            if (!libraryPermissionGranted) permissionLauncher.launch(audioPermission)
+                        },
+                        onPlayTrack = { i ->
+                            controller?.apply {
+                                setMediaItems(tracks.map { it.toMediaItem() }, i, 0L)
+                                prepare()
+                                play()
+                            }
+                        },
+                        onPlayStreamUrl = { url ->
+                            controller?.apply {
+                                val clean = url.trim()
+                                setMediaItem(MediaItem.Builder().setUri(clean)
+                                    .setMediaMetadata(MediaMetadata.Builder().setTitle(clean).build()).build())
+                                prepare()
+                                play()
+                                title = clean
+                            }
                         }
-                    },
-                    onPlayStreamUrl = { url ->
-                        controller?.apply {
-                            val clean = url.trim()
-                            setMediaItem(MediaItem.Builder().setUri(clean)
-                                .setMediaMetadata(MediaMetadata.Builder().setTitle(clean).build()).build())
-                            prepare()
-                            play()
-                            title = clean
+                    )
+                    1 -> VisualiserStudioScreen()
+                    2 -> AiDjTab(player = controller, djController = dj, tracks = tracks)
+                    3 -> KaraokeScreen(player = controller, trackId = currentTrackId, trackTitle = currentTrackTitle)
+                    4 -> AiSongStudioTab(onTrackCreated = {
+                        if (libraryPermissionGranted) scope.launch {
+                            tracks = LocalAudioScanner.scanAllTracks(context)
                         }
-                    }
-                )
-                1 -> VisualiserStudioScreen()
-                2 -> AiDjTab(player = controller, djController = dj, tracks = tracks)
-                3 -> KaraokeScreen(player = controller, trackId = currentTrackId, trackTitle = currentTrackTitle)
-                4 -> AiSongStudioTab(onTrackCreated = {
-                    if (libraryPermissionGranted) scope.launch {
-                        tracks = LocalAudioScanner.scanAllTracks(context)
-                    }
-                })
-                5 -> AurixIntelligenceScreen(trackId = currentTrackId, title = currentTrackTitle, artist = controller?.currentMediaItem?.mediaMetadata?.artist?.toString().orEmpty())
+                    })
+                    5 -> AurixIntelligenceScreen(
+                        trackId = currentTrackId,
+                        title = currentTrackTitle,
+                        artist = controller?.currentMediaItem?.mediaMetadata?.artist?.toString().orEmpty()
+                    )
+                }
             }
         }
     }

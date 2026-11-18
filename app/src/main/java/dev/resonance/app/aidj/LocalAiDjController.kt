@@ -8,18 +8,29 @@ import kotlinx.coroutines.delay
 import java.util.Locale
 
 /**
- * Single-player fade transition. A true crossfade needs two independently-playing decks.
+ * Single-player fade transition. TTS is initialized only when a voice announcement is requested,
+ * so Android speech-engine startup is not part of the app's cold-start path.
  */
 class LocalAiDjController(context: Context) {
-    private var tts: TextToSpeech? = null
+    private val appContext = context.applicationContext
+    @Volatile private var tts: TextToSpeech? = null
     @Volatile private var ttsReady = false
+    @Volatile private var ttsInitRequested = false
 
-    init {
-        tts = TextToSpeech(context.applicationContext) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                tts?.language = Locale.getDefault()
-                ttsReady = true
+    @Synchronized
+    private fun initializeTtsIfNeeded() {
+        if (ttsInitRequested) return
+        ttsInitRequested = true
+        try {
+            tts = TextToSpeech(appContext) { status ->
+                if (status == TextToSpeech.SUCCESS) {
+                    runCatching { tts?.language = Locale.getDefault() }
+                    ttsReady = true
+                }
             }
+        } catch (_: Throwable) {
+            // Voice announcements are optional; playback and the rest of the app must continue.
+            ttsReady = false
         }
     }
 
@@ -36,12 +47,15 @@ class LocalAiDjController(context: Context) {
             }
             val nextIndex = if (player.hasNextMediaItem()) player.nextMediaItemIndex else 0
             val nextItem = player.getMediaItemAt(nextIndex)
-            if (announceWithVoice && ttsReady) {
-                val title = nextItem.mediaMetadata.title?.toString() ?: "the next track"
-                val artist = nextItem.mediaMetadata.artist?.toString().orEmpty()
-                val line = if (artist.isNotBlank()) "Up next, $title by $artist" else "Up next, $title"
-                tts?.speak(line, TextToSpeech.QUEUE_FLUSH, null, "aurix_dj")
-                delay(1500L)
+            if (announceWithVoice) {
+                initializeTtsIfNeeded()
+                if (ttsReady) {
+                    val title = nextItem.mediaMetadata.title?.toString() ?: "the next track"
+                    val artist = nextItem.mediaMetadata.artist?.toString().orEmpty()
+                    val line = if (artist.isNotBlank()) "Up next, $title by $artist" else "Up next, $title"
+                    runCatching { tts?.speak(line, TextToSpeech.QUEUE_FLUSH, null, "aurix_dj") }
+                    delay(1500L)
+                }
             }
             if (player.hasNextMediaItem()) player.seekToNextMediaItem() else player.seekTo(0, 0L)
             player.play()
@@ -56,10 +70,12 @@ class LocalAiDjController(context: Context) {
         }
     }
 
+    @Synchronized
     fun release() {
-        tts?.stop()
-        tts?.shutdown()
+        runCatching { tts?.stop() }
+        runCatching { tts?.shutdown() }
         tts = null
         ttsReady = false
+        ttsInitRequested = false
     }
 }
