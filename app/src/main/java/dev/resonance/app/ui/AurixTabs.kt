@@ -30,8 +30,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import dev.resonance.app.AudioTrack
 import dev.resonance.app.aidj.LocalAiDjController
+import dev.resonance.app.intelligence.SmartMixEngine
 import dev.resonance.app.media.ResonanceTrack
 import dev.resonance.app.studio.SongGeneratorClient
 import kotlinx.coroutines.launch
@@ -53,22 +57,15 @@ fun LibraryAndStreamTab(
             Text("Grant audio access to browse music stored on this device.")
             Button(onClick = onRequestLibraryPermission) { Text("Allow music library access") }
         }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
-                value = streamUrl,
-                onValueChange = { streamUrl = it },
+                value = streamUrl, onValueChange = { streamUrl = it },
                 label = { Text("Direct HTTPS Audio / Radio URL") },
-                modifier = Modifier.weight(1f),
-                singleLine = true
+                modifier = Modifier.weight(1f), singleLine = true
             )
             Button(onClick = {
                 val uri = runCatching { java.net.URI(streamUrl.trim()) }.getOrNull()
-                if (uri?.scheme.equals("https", true) && !uri.host.isNullOrBlank()) {
-                    onPlayStreamUrl(streamUrl.trim())
-                }
+                if (uri?.scheme.equals("https", true) && !uri.host.isNullOrBlank()) onPlayStreamUrl(streamUrl.trim())
             }) { Text("Stream") }
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -85,12 +82,15 @@ fun LibraryAndStreamTab(
 }
 
 @Composable
-fun AiDjTab(player: Player?, djController: LocalAiDjController) {
+fun AiDjTab(player: Player?, djController: LocalAiDjController, tracks: List<ResonanceTrack>) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val smartMix = remember(context) { SmartMixEngine(context) }
     var crossfadeSec by remember { mutableFloatStateOf(3.0f) }
     var voiceIntro by remember { mutableStateOf(true) }
     var shuffleMix by remember { mutableStateOf(false) }
     var transitionRunning by remember { mutableStateOf(false) }
+    var mixStatus by remember { mutableStateOf("SmartMix is local-only and uses your library and saved listening history.") }
 
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -98,9 +98,38 @@ fun AiDjTab(player: Player?, djController: LocalAiDjController) {
     ) {
         Text("Local-First AI DJ", style = MaterialTheme.typography.headlineSmall)
         Text(
-            "Single-player fade transition (no overlapping dual-deck crossfade yet), shuffle sequencing and offline Text-to-Speech intros.",
+            "SmartMix builds a queue from your library and listening history. The transition control below is a single-deck fade; it is not a beat-matched dual-deck crossfade.",
             style = MaterialTheme.typography.bodyMedium
         )
+        Button(
+            enabled = player != null && tracks.size > 1 && !transitionRunning,
+            onClick = {
+                val active = player ?: return@Button
+                val library = tracks.map { AudioTrack(it.id, it.title, it.artist, it.uri, false, it.album) }
+                val currentId = active.currentMediaItem?.mediaId.orEmpty()
+                val seed = library.firstOrNull { it.id == currentId }
+                val current = seed
+                if (current != null) smartMix.record(current, active.currentPosition)
+                val recommendations = smartMix.recommend(seed, library, 15)
+                val items = recommendations.map { recommendation ->
+                    MediaItem.Builder().setMediaId(recommendation.track.id)
+                        .setUri(recommendation.track.uri)
+                        .setMediaMetadata(MediaMetadata.Builder()
+                            .setTitle(recommendation.track.title)
+                            .setArtist(recommendation.track.artist)
+                            .setAlbumTitle(recommendation.track.album).build())
+                        .build()
+                }
+                if (items.isNotEmpty()) {
+                    active.addMediaItems(items)
+                    mixStatus = "Added ${items.size} recommended tracks to the queue."
+                } else {
+                    mixStatus = "No suitable tracks found. Add more local music to your library."
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Build SmartMix Queue") }
+        Text(mixStatus, style = MaterialTheme.typography.bodySmall)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Voice Track Announcements", modifier = Modifier.weight(1f))
             Switch(checked = voiceIntro, onCheckedChange = { voiceIntro = it })
@@ -120,11 +149,8 @@ fun AiDjTab(player: Player?, djController: LocalAiDjController) {
                 player?.let { activePlayer ->
                     scope.launch {
                         transitionRunning = true
-                        try {
-                            djController.transitionToNext(activePlayer, crossfadeSec, voiceIntro)
-                        } finally {
-                            transitionRunning = false
-                        }
+                        try { djController.transitionToNext(activePlayer, crossfadeSec, voiceIntro) }
+                        finally { transitionRunning = false }
                     }
                 }
             },
@@ -140,60 +166,41 @@ fun AiSongStudioTab(onTrackCreated: () -> Unit) {
     val prefs = remember { context.getSharedPreferences("aurix_studio", Context.MODE_PRIVATE) }
     var prompt by remember { mutableStateOf("") }
     var endpointUrl by remember { mutableStateOf(prefs.getString("endpoint_url", "") ?: "") }
-    // API keys are intentionally session-only; do not persist bearer credentials in plain preferences.
     var apiKey by remember { mutableStateOf("") }
     var isGenerating by remember { mutableStateOf(false) }
     var statusMessage by remember {
         mutableStateOf("No endpoint: creates a simple procedural demo tone, not AI-generated music.")
     }
-
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("AI Song Studio (BYOK / Local)", style = MaterialTheme.typography.headlineSmall)
-        OutlinedTextField(
-            value = prompt,
-            onValueChange = { prompt = it },
-            label = { Text("Describe mood, tempo, or melody") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = endpointUrl,
-            onValueChange = {
-                endpointUrl = it
-                prefs.edit().putString("endpoint_url", it).apply()
-            },
-            label = { Text("HTTPS generation endpoint") },
+        OutlinedTextField(value = prompt, onValueChange = { prompt = it },
+            label = { Text("Describe mood, tempo, or melody") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = endpointUrl, onValueChange = {
+            endpointUrl = it
+            prefs.edit().putString("endpoint_url", it).apply()
+        }, label = { Text("HTTPS generation endpoint") },
             placeholder = { Text("https://your-server.example/generate") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        OutlinedTextField(
-            value = apiKey,
-            onValueChange = { apiKey = it },
+            modifier = Modifier.fillMaxWidth(), singleLine = true)
+        OutlinedTextField(value = apiKey, onValueChange = { apiKey = it },
             label = { Text("Optional Bearer API Key (not saved)") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        Button(
-            enabled = !isGenerating && prompt.isNotBlank(),
-            onClick = {
-                isGenerating = true
-                statusMessage = "Generating audio..."
-                scope.launch {
-                    val result = SongGeneratorClient.generateAndSave(context, prompt, endpointUrl, apiKey)
-                    isGenerating = false
-                    result.onSuccess { file ->
-                        statusMessage = "Saved to Library: ${file.name}"
-                        onTrackCreated()
-                    }.onFailure { err ->
-                        statusMessage = "Error: ${err.message ?: "Unknown error"}"
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) { Text(if (isGenerating) "Generating..." else "Generate & Save Audio") }
+            modifier = Modifier.fillMaxWidth(), singleLine = true)
+        Button(enabled = !isGenerating && prompt.isNotBlank(), onClick = {
+            isGenerating = true
+            statusMessage = "Generating audio..."
+            scope.launch {
+                val result = SongGeneratorClient.generateAndSave(context, prompt, endpointUrl, apiKey)
+                isGenerating = false
+                result.onSuccess { file ->
+                    statusMessage = "Saved to Library: ${file.name}"
+                    onTrackCreated()
+                }.onFailure { err -> statusMessage = "Error: ${err.message ?: "Unknown error"}" }
+            }
+        }, modifier = Modifier.fillMaxWidth()) {
+            Text(if (isGenerating) "Generating..." else "Generate & Save Audio")
+        }
         Text(statusMessage, style = MaterialTheme.typography.bodySmall)
     }
 }

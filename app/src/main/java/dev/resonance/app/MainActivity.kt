@@ -190,7 +190,7 @@ fun AurixApp() {
                     }
                 )
                 1 -> VisualiserStudioScreen()
-                2 -> AiDjTab(player = controller, djController = dj)
+                2 -> AiDjTab(player = controller, djController = dj, tracks = tracks)
                 3 -> KaraokeScreen(player = controller, trackId = currentTrackId, trackTitle = currentTrackTitle)
                 4 -> AiSongStudioTab(onTrackCreated = {
                     if (libraryPermissionGranted) scope.launch {
