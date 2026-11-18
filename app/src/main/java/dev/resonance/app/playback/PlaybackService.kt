@@ -28,7 +28,6 @@ object ResonanceVisualizerTap : BaseAudioProcessor() {
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
-            // Do not make playback fail for float or other PCM encodings.
             return AudioProcessor.AudioFormat.NOT_SET
         }
         channelCount = inputAudioFormat.channelCount.coerceAtLeast(1)
@@ -42,7 +41,7 @@ object ResonanceVisualizerTap : BaseAudioProcessor() {
         val bins = FloatArray(32)
         for (bin in bins.indices) {
             val startFrame = frames * bin / bins.size
-            val endFrame = (frames * (bin + 1) / bins.size).coerceAtLeast(startFrame)
+            val endFrame = frames * (bin + 1) / bins.size
             var sumSquares = 0.0
             var count = 0
             for (frame in startFrame until endFrame) {
@@ -74,14 +73,12 @@ class PlaybackService : MediaSessionService() {
                 context: Context,
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean
-            ): AudioSink {
-                return DefaultAudioSink.Builder(context)
-                    .setAudioProcessors(arrayOf(ResonanceVisualizerTap))
-                    .build()
-            }
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                .setAudioProcessors(arrayOf(ResonanceVisualizerTap))
+                .build()
         }
         val audioAttributes = AudioAttributes.Builder()
-            .setContentType(C.A.AUDIO_CONTENT_TYPE_MUSIC)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .setUsage(C.USAGE_MEDIA)
             .build()
         val player = ExoPlayer.Builder(this, renderersFactory)
