@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<adaptive-icon xmlns:android="&#104;&#116;&#116;&#112;&#58;&#47;&#47;&#115;&#99;&#104;&#101;&#109;&#97;&#115;&#46;&#97;&#110;&#100;&#114;&#111;&#105;&#100;&#46;&#99;&#111;&#109;&#47;&#97;&#112;&#107;&#47;&#114;&#101;&#115;&#47;&#97;&#110;&#100;&#114;&#111;&#105;&#100;">
-    <background android:drawable="@drawable/ic_launcher_background" />
+<adaptive-icon xmlns:android="http://android.com">
+    <background android:drawable="@color/aurix_bg" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
 </adaptive-icon>
