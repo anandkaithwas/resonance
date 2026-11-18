@@ -17,34 +17,44 @@ import androidx.media3.session.MediaSessionService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.nio.ByteBuffer
-import kotlin.math.abs
+import java.nio.ByteOrder
+import kotlin.math.sqrt
 
 @OptIn(UnstableApi::class)
 object ResonanceVisualizerTap : BaseAudioProcessor() {
-    private val _amplitudes = MutableStateFlow(FloatArray(32) { 0.05f })
+    private val _amplitudes = MutableStateFlow(FloatArray(32) { 0f })
     val amplitudes: StateFlow<FloatArray> = _amplitudes
+    private var channelCount = 1
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
-            throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
+            // Do not make playback fail for float or other PCM encodings.
+            return AudioProcessor.AudioFormat.NOT_SET
         }
+        channelCount = inputAudioFormat.channelCount.coerceAtLeast(1)
         return inputAudioFormat
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
-        val duplicate = inputBuffer.duplicate()
+        val duplicate = inputBuffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
+        val totalSamples = duplicate.remaining() / 2
+        val frames = totalSamples / channelCount
         val bins = FloatArray(32)
-        val totalShorts = duplicate.remaining() / 2
-        val step = (totalShorts / 32).coerceAtLeast(1)
-        for (i in 0 until 32) {
-            if (duplicate.remaining() >= 2) {
-                val sample = duplicate.short.toFloat() / Short.MAX_VALUE
-                bins[i] = abs(sample).coerceIn(0.04f, 1f)
-                val skipBytes = (step - 1) * 2
-                if (duplicate.remaining() >= skipBytes) {
-                    duplicate.position(duplicate.position() + skipBytes)
+        for (bin in bins.indices) {
+            val startFrame = frames * bin / bins.size
+            val endFrame = (frames * (bin + 1) / bins.size).coerceAtLeast(startFrame)
+            var sumSquares = 0.0
+            var count = 0
+            for (frame in startFrame until endFrame) {
+                repeat(channelCount) {
+                    if (duplicate.remaining() >= 2) {
+                        val sample = duplicate.short.toDouble() / Short.MAX_VALUE
+                        sumSquares += sample * sample
+                        count++
+                    }
                 }
             }
+            bins[bin] = if (count == 0) 0f else sqrt(sumSquares / count).toFloat().coerceIn(0f, 1f)
         }
         _amplitudes.value = bins
         val outputBuffer = replaceOutputBuffer(inputBuffer.remaining())
@@ -71,7 +81,7 @@ class PlaybackService : MediaSessionService() {
             }
         }
         val audioAttributes = AudioAttributes.Builder()
-            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .setContentType(C.A.AUDIO_CONTENT_TYPE_MUSIC)
             .setUsage(C.USAGE_MEDIA)
             .build()
         val player = ExoPlayer.Builder(this, renderersFactory)

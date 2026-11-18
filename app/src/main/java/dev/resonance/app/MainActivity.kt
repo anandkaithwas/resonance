@@ -46,12 +46,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { MaterialTheme(colorScheme = AurixDarkColors) { ResonanceApp() } }
+        setContent { MaterialTheme(colorScheme = AurixDarkColors) { AurixApp() } }
     }
 }
 
 @Composable
-fun ResonanceApp() {
+fun AurixApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var controller by remember { mutableStateOf<MediaController?>(null) }
@@ -59,44 +59,66 @@ fun ResonanceApp() {
     var title by remember { mutableStateOf("Nothing Playing") }
     var isPlaying by remember { mutableStateOf(false) }
     var tab by remember { mutableIntStateOf(0) }
+    var libraryPermissionGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                    Manifest.permission.READ_MEDIA_AUDIO
+                else Manifest.permission.READ_EXTERNAL_STORAGE
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
 
     val dj = remember { LocalAiDjController(context) }
     DisposableEffect(Unit) { onDispose { dj.release() } }
 
-    val perms = remember {
-        buildList {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                add(Manifest.permission.READ_MEDIA_AUDIO)
-                add(Manifest.permission.POST_NOTIFICATIONS)
-            } else add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            add(Manifest.permission.RECORD_AUDIO)
-        }.toTypedArray()
+    val audioPermission = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+            Manifest.permission.READ_MEDIA_AUDIO
+        else Manifest.permission.READ_EXTERNAL_STORAGE
     }
-
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { res ->
-        val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) res[Manifest.permission.READ_MEDIA_AUDIO] == true
-        else res[Manifest.permission.READ_EXTERNAL_STORAGE] == true
-        if (ok) scope.launch { tracks = LocalAudioScanner.scanAllTracks(context) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        libraryPermissionGranted = granted
+        if (granted) scope.launch { tracks = LocalAudioScanner.scanAllTracks(context) }
     }
 
     DisposableEffect(context) {
-        val future = MediaController.Builder(context, SessionToken(context, ComponentName(context, PlaybackService::class.java))).buildAsync()
-        future.addListener({
+        val future = MediaController.Builder(
+            context,
+            SessionToken(context, ComponentName(context, PlaybackService::class.java))
+        ).buildAsync()
+        val listener = Runnable {
             if (future.isDone && !future.isCancelled) {
-                controller = future.get().apply {
-                    addListener(object : Player.Listener {
+                runCatching { future.get() }.onSuccess { mediaController ->
+                    controller = mediaController
+                    mediaController.addListener(object : Player.Listener {
                         override fun onIsPlayingChanged(playing: Boolean) { isPlaying = playing }
-                        override fun onMediaMetadataChanged(meta: MediaMetadata) { title = meta.title?.toString() ?: "Streaming Audio" }
+                        override fun onMediaMetadataChanged(meta: MediaMetadata) {
+                            title = meta.title?.toString() ?: "Streaming Audio"
+                        }
+                        override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+                            title = item?.mediaMetadata?.title?.toString() ?: "Streaming Audio"
+                        }
                     })
+                    isPlaying = mediaController.isPlaying
+                    title = mediaController.currentMediaItem?.mediaMetadata?.title?.toString()
+                        ?: "Nothing Playing"
                 }
             }
-        }, ContextCompat.getMainExecutor(context))
-        onDispose { MediaController.releaseFuture(future); controller = null }
+        }
+        future.addListener(listener, ContextCompat.getMainExecutor(context))
+        onDispose {
+            controller?.release()
+            MediaController.releaseFuture(future)
+            controller = null
+        }
     }
 
-    LaunchedEffect(Unit) {
-        if (perms.any { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }) launcher.launch(perms)
-        tracks = LocalAudioScanner.scanAllTracks(context)
+    LaunchedEffect(libraryPermissionGranted) {
+        if (libraryPermissionGranted) tracks = LocalAudioScanner.scanAllTracks(context)
     }
 
     Scaffold(
@@ -106,19 +128,32 @@ fun ResonanceApp() {
         bottomBar = {
             Column {
                 Surface(tonalElevation = 4.dp) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-                        IconButton(onClick = { controller?.let { if (it.isPlaying) it.pause() else it.play() } }) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(title, Modifier.weight(1f), maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.titleSmall)
+                        IconButton(onClick = {
+                            controller?.let { if (it.isPlaying) it.pause() else it.play() }
+                        }) {
                             Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play or Pause")
                         }
-                        IconButton(onClick = { controller?.seekToNextMediaItem() }) { Icon(Icons.Default.SkipNext, "Next") }
+                        IconButton(onClick = { controller?.seekToNextMediaItem() }) {
+                            Icon(Icons.Default.SkipNext, "Next")
+                        }
                     }
                 }
                 NavigationBar {
-                    NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Icon(Icons.Default.LibraryMusic, null) }, label = { Text("Library") })
-                    NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Icon(Icons.Default.Equalizer, null) }, label = { Text("Visualiser") })
-                    NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Icon(Icons.Default.AutoAwesome, null) }, label = { Text("AI DJ") })
-                    NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Icon(Icons.Default.MusicNote, null) }, label = { Text("AI Studio") })
+                    NavigationBarItem(selected = tab == 0, onClick = { tab = 0 },
+                        icon = { Icon(Icons.Default.LibraryMusic, null) }, label = { Text("Library") })
+                    NavigationBarItem(selected = tab == 1, onClick = { tab = 1 },
+                        icon = { Icon(Icons.Default.Equalizer, null) }, label = { Text("Visualiser") })
+                    NavigationBarItem(selected = tab == 2, onClick = { tab = 2 },
+                        icon = { Icon(Icons.Default.AutoAwesome, null) }, label = { Text("AI DJ") })
+                    NavigationBarItem(selected = tab == 3, onClick = { tab = 3 },
+                        icon = { Icon(Icons.Default.MusicNote, null) }, label = { Text("AI Studio") })
                 }
             }
         }
@@ -127,18 +162,34 @@ fun ResonanceApp() {
             when (tab) {
                 0 -> LibraryAndStreamTab(
                     tracks = tracks,
-                    onPlayTrack = { i -> controller?.apply { setMediaItems(tracks.map { it.toMediaItem() }, i, 0L); prepare(); play() } },
+                    onRequestLibraryPermission = {
+                        if (!libraryPermissionGranted) permissionLauncher.launch(audioPermission)
+                    },
+                    onPlayTrack = { i ->
+                        controller?.apply {
+                            setMediaItems(tracks.map { it.toMediaItem() }, i, 0L)
+                            prepare()
+                            play()
+                        }
+                    },
                     onPlayStreamUrl = { url ->
                         controller?.apply {
                             val clean = url.trim()
-                            setMediaItem(MediaItem.Builder().setUri(clean).setMediaMetadata(MediaMetadata.Builder().setTitle(clean).build()).build())
-                            prepare(); play(); title = clean
+                            setMediaItem(MediaItem.Builder().setUri(clean)
+                                .setMediaMetadata(MediaMetadata.Builder().setTitle(clean).build()).build())
+                            prepare()
+                            play()
+                            title = clean
                         }
                     }
                 )
                 1 -> VisualiserStudioScreen()
                 2 -> AiDjTab(player = controller, djController = dj)
-                3 -> AiSongStudioTab(onTrackCreated = { scope.launch { tracks = LocalAudioScanner.scanAllTracks(context) } })
+                3 -> AiSongStudioTab(onTrackCreated = {
+                    if (libraryPermissionGranted) scope.launch {
+                        tracks = LocalAudioScanner.scanAllTracks(context)
+                    }
+                })
             }
         }
     }

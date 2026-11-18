@@ -3,12 +3,16 @@ package dev.resonance.app.aidj
 import android.content.Context
 import android.speech.tts.TextToSpeech
 import androidx.media3.common.Player
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import java.util.Locale
 
+/**
+ * Single-player fade transition. A true crossfade needs two independently-playing decks.
+ */
 class LocalAiDjController(context: Context) {
     private var tts: TextToSpeech? = null
-    private var ttsReady = false
+    @Volatile private var ttsReady = false
 
     init {
         tts = TextToSpeech(context.applicationContext) { status ->
@@ -19,30 +23,43 @@ class LocalAiDjController(context: Context) {
         }
     }
 
-    suspend fun transitionToNext(player: Player, crossfadeSeconds: Float, announceWithVoice: Boolean) {
-        val totalMs = (crossfadeSeconds * 1000).toLong().coerceAtLeast(500L)
-        val steps = 16
-        val stepDelay = totalMs / steps
-        for (i in steps downTo 2) {
-            player.volume = i / steps.toFloat()
-            delay(stepDelay)
-        }
-        val nextIndex = if (player.hasNextMediaItem()) player.nextMediaItemIndex else 0
-        val nextItem = if (player.mediaItemCount > nextIndex) player.getMediaItemAt(nextIndex) else null
-        val title = nextItem?.mediaMetadata?.title?.toString() ?: "next track"
-        val artist = nextItem?.mediaMetadata?.artist?.toString() ?: ""
-        if (announceWithVoice && ttsReady) {
-            val line = if (artist.isNotBlank()) "Up next, $title by $artist" else "Up next, $title"
-            tts?.speak(line, TextToSpeech.QUEUE_FLUSH, null, "resonance_dj")
-            delay(1500L)
-        }
-        if (player.hasNextMediaItem()) player.seekToNextMediaItem() else if (player.mediaItemCount > 0) player.seekTo(0, 0L)
-        player.play()
-        for (i in 2..steps) {
-            player.volume = i / steps.toFloat()
-            delay(stepDelay)
+    suspend fun transitionToNext(player: Player, fadeSeconds: Float, announceWithVoice: Boolean) {
+        require(fadeSeconds.isFinite() && fadeSeconds in 0.5f..15f) { "Fade duration must be 0.5–15 seconds" }
+        require(player.mediaItemCount > 0) { "There is no track in the queue" }
+        val originalVolume = player.volume
+        val steps = 24
+        val stepDelay = (fadeSeconds * 1000L / steps).coerceAtLeast(1L)
+        try {
+            for (step in steps downTo 0) {
+                player.volume = originalVolume * step / steps
+                delay(stepDelay)
+            }
+            val nextIndex = if (player.hasNextMediaItem()) player.nextMediaItemIndex else 0
+            val nextItem = player.getMediaItemAt(nextIndex)
+            if (announceWithVoice && ttsReady) {
+                val title = nextItem.mediaMetadata.title?.toString() ?: "the next track"
+                val artist = nextItem.mediaMetadata.artist?.toString().orEmpty()
+                val line = if (artist.isNotBlank()) "Up next, $title by $artist" else "Up next, $title"
+                tts?.speak(line, TextToSpeech.QUEUE_FLUSH, null, "aurix_dj")
+                delay(1500L)
+            }
+            if (player.hasNextMediaItem()) player.seekToNextMediaItem() else player.seekTo(0, 0L)
+            player.play()
+            for (step in 0..steps) {
+                player.volume = originalVolume * step / steps
+                delay(stepDelay)
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } finally {
+            player.volume = originalVolume
         }
     }
 
-    fun release() { tts?.shutdown() }
+    fun release() {
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
+        ttsReady = false
+    }
 }

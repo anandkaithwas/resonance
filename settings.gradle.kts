@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "RESONANCE"
+rootProject.name = "AurixStudio"
 include(":app")

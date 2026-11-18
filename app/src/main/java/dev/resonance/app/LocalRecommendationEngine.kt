@@ -34,14 +34,18 @@ object LocalRecommendationEngine {
         count: Int = 12
     ): List<TrackRecommendation> {
         if (library.isEmpty() || count <= 0) return emptyList()
-        val recent = history.sortedBy { it.playedAt }
+        val recent = history.filter { it.playedAt <= now }.sortedBy { it.playedAt }
         val latestSeed = seed ?: recent.lastOrNull()?.let { event ->
             library.firstOrNull { it.id == event.trackId }
         }
         val seedId = latestSeed?.id
         val seedArtist = latestSeed?.artist.orEmpty()
-        val skippedRecently = recent.filter { it.skipped && now - it.playedAt < SKIP_COOLDOWN_MS }.map { it.trackId }.toSet()
-        val heardRecently = recent.filter { now - it.playedAt < RECENTLY_HEARD_MS }.map { it.trackId }.toSet()
+        val skippedRecently = recent.filter {
+            it.skipped && now - it.playedAt < SKIP_COOLDOWN_MS
+        }.map { it.trackId }.toSet()
+        val heardRecently = recent.filter {
+            now - it.playedAt < RECENTLY_HEARD_MS
+        }.map { it.trackId }.toSet()
         val playCounts = recent.groupingBy { it.trackId }.eachCount()
         val coListen = coListenWeights(recent)
         val seedCo = seedId?.let { coListen[it].orEmpty() }.orEmpty()
@@ -55,8 +59,12 @@ object LocalRecommendationEngine {
                 val artistHistory = recent.count { it.artist.equals(candidate.artist, true) }
                 val familiarity = ln(1.0 + (playCounts[candidate.id] ?: 0)) / 4.0
                 val recencyPenalty = if (candidate.id in heardRecently) 0.15 else 1.0
-                val score = (coScore * 2.4 + if (sameArtist) 1.8 else 0.0 +
-                    ln(1.0 + artistHistory) * 0.22 + familiarity * 0.25 + 0.05) * recencyPenalty
+                val score = (
+                    coScore * 2.4 +
+                        (if (sameArtist) 1.8 else 0.0) +
+                        ln(1.0 + artistHistory) * 0.22 +
+                        familiarity * 0.25 + 0.05
+                    ) * recencyPenalty
                 val reason = when {
                     coScore >= 1.0 -> "Often played alongside your recent music"
                     sameArtist -> "More by ${candidate.artist}"
