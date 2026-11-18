@@ -15,9 +15,9 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import dev.resonance.app.intelligence.AurixAudioEngine
+import dev.resonance.app.intelligence.AudioInsight
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.sqrt
 
@@ -26,7 +26,7 @@ object ResonanceVisualizerTap : BaseAudioProcessor() {
     private val _amplitudes = MutableStateFlow(FloatArray(32) { 0f })
     val amplitudes: StateFlow<FloatArray> = _amplitudes
     private val _insight = MutableStateFlow(AurixAudioEngine().latestInsight)
-    val insight: StateFlow<dev.resonance.app.intelligence.AudioInsight> = _insight
+    val insight: StateFlow<AudioInsight> = _insight
     val intelligence = AurixAudioEngine()
     private var channelCount = 1
     private var sampleRate = 44100
@@ -38,10 +38,9 @@ object ResonanceVisualizerTap : BaseAudioProcessor() {
         return inputAudioFormat
     }
 
-    override fun queueInput(inputBuffer: ByteBuffer) {
+    override fun queueInput(inputBuffer: java.nio.ByteBuffer) {
         val source = inputBuffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
-        val sampleCount = source.remaining() / 2
-        val samples = ShortArray(sampleCount)
+        val samples = ShortArray(source.remaining() / 2)
         for (i in samples.indices) samples[i] = source.short
         val processed = intelligence.process(samples, sampleRate, channelCount)
 
@@ -62,6 +61,12 @@ object ResonanceVisualizerTap : BaseAudioProcessor() {
         val output = replaceOutputBuffer(processed.size * 2).order(ByteOrder.LITTLE_ENDIAN)
         processed.forEach { output.putShort(it) }
         output.flip()
+        inputBuffer.position(inputBuffer.limit())
+    }
+
+    override fun onFlush() {
+        super.onFlush()
+        intelligence.reset()
     }
 }
 

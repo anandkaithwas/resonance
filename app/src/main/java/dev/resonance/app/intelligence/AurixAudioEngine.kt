@@ -1,5 +1,6 @@
 package dev.resonance.app.intelligence
 
+import kotlin.math.exp
 import kotlin.math.pow
 import kotlin.math.sqrt
 
@@ -16,13 +17,10 @@ data class AudioInsight(
     val gainsDb: FloatArray
 )
 
-/**
- * Fully offline, deterministic PCM feature extraction and adaptive three-band EQ.
- * This is signal processing + heuristics, not a trained ML model.
- */
+/** Offline PCM feature extraction and adaptive three-band EQ; deterministic DSP, not a trained ML model. */
 class AurixAudioEngine {
-    private var lowState = 0f
-    private var midState = 0f
+    private var lowState = FloatArray(0)
+    private var midState = FloatArray(0)
     private var smoothedBassGain = 0f
     private var smoothedMidGain = 0f
     private var smoothedTrebleGain = 0f
@@ -33,8 +31,12 @@ class AurixAudioEngine {
 
     fun process(input: ShortArray, sampleRate: Int, channels: Int): ShortArray {
         if (input.isEmpty() || sampleRate <= 0 || channels <= 0) return input.copyOf()
-        val bassAlpha = (1f - kotlin.math.exp((-2.0 * Math.PI * 180.0 / sampleRate).toFloat()))
-        val midAlpha = (1f - kotlin.math.exp((-2.0 * Math.PI * 2600.0 / sampleRate).toFloat()))
+        if (lowState.size != channels) {
+            lowState = FloatArray(channels)
+            midState = FloatArray(channels)
+        }
+        val bassAlpha = 1f - exp((-2.0 * Math.PI * 180.0 / sampleRate).toFloat())
+        val midAlpha = 1f - exp((-2.0 * Math.PI * 2600.0 / sampleRate).toFloat())
         var bassEnergy = 0.0
         var midEnergy = 0.0
         var trebleEnergy = 0.0
@@ -43,15 +45,18 @@ class AurixAudioEngine {
         val mids = FloatArray(input.size)
         val highs = FloatArray(input.size)
         for (i in input.indices) {
+            val channel = i % channels
             val x = input[i] / 32768f
-            lowState += bassAlpha * (x - lowState)
-            midState += midAlpha * (x - midState)
-            val low = lowState
-            val mid = midState - lowState
-            val high = x - midState
-            lows[i] = low; mids[i] = mid; highs[i] = high
+            lowState[channel] += bassAlpha * (x - lowState[channel])
+            midState[channel] += midAlpha * (x - midState[channel])
+            val low = lowState[channel]
+            val midBand = midState[channel] - lowState[channel]
+            val high = x - midState[channel]
+            lows[i] = low
+            mids[i] = midBand
+            highs[i] = high
             bassEnergy += low.toDouble() * low
-            midEnergy += mid.toDouble() * mid
+            midEnergy += midBand.toDouble() * midBand
             trebleEnergy += high.toDouble() * high
             totalEnergy += x.toDouble() * x
         }
@@ -67,22 +72,22 @@ class AurixAudioEngine {
             else -> AurixMood.BALANCED
         }
         val targetBass = when (reality) {
-            SoundReality.CLUB -> 3.0f
+            SoundReality.CLUB -> 3f
             SoundReality.NIGHT -> -1.5f
-            else -> (0.8f - bass * 8f).coerceIn(-1.5f, 2.0f)
+            else -> (0.8f - bass * 8f).coerceIn(-1.5f, 2f)
         }
         val targetMid = when (reality) {
             SoundReality.CINEMA -> 1.5f
             SoundReality.NIGHT -> 0.8f
-            else -> (0.45f - mid * 3f).coerceIn(-1.0f, 1.2f)
+            else -> (0.45f - mid * 3f).coerceIn(-1f, 1.2f)
         }
         val targetTreble = when (reality) {
-            SoundReality.CLUB -> 1.0f
-            SoundReality.NIGHT -> -2.0f
+            SoundReality.CLUB -> 1f
+            SoundReality.NIGHT -> -2f
             SoundReality.CINEMA -> 1.2f
             else -> (0.35f - treble * 5f).coerceIn(-1.5f, 1.5f)
         }
-        // Smooth gain movement to reduce audible pumping between adjacent PCM buffers.
+        // Per-buffer gain smoothing reduces abrupt changes and audible pumping.
         smoothedBassGain += (targetBass - smoothedBassGain) * 0.12f
         smoothedMidGain += (targetMid - smoothedMidGain) * 0.12f
         smoothedTrebleGain += (targetTreble - smoothedTrebleGain) * 0.12f
@@ -99,8 +104,8 @@ class AurixAudioEngine {
     }
 
     fun reset() {
-        lowState = 0f
-        midState = 0f
+        lowState.fill(0f)
+        midState.fill(0f)
         smoothedBassGain = 0f
         smoothedMidGain = 0f
         smoothedTrebleGain = 0f
