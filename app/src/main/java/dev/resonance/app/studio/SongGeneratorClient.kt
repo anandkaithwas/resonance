@@ -13,7 +13,6 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.UUID
 import kotlin.math.PI
-import kotlin.math.floorMod
 import kotlin.math.sin
 
 object SongGeneratorClient {
@@ -47,7 +46,7 @@ object SongGeneratorClient {
                         connectTimeout = 15_000
                         readTimeout = 120_000
                         setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                        setRequestProperty("Accept", "audio/wav, audio/*")
+                        setRequestProperty("Accept", "audio/wav")
                         if (apiKey.isNotBlank()) setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
                         doOutput = true
                     }
@@ -108,7 +107,7 @@ object SongGeneratorClient {
         val sampleRate = 22050
         val numSamples = sampleRate * seconds
         val scale = doubleArrayOf(261.63, 293.66, 329.63, 392.00, 440.00, 523.25)
-        val hashOffset = floorMod(seedText.hashCode(), scale.size)
+        val hashOffset = Math.floorMod(seedText.hashCode(), scale.size)
         val pcmData = ByteArray(numSamples * 2)
         val buffer = ByteBuffer.wrap(pcmData).order(ByteOrder.LITTLE_ENDIAN)
         for (i in 0 until numSamples) {
