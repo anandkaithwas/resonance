@@ -59,6 +59,8 @@ fun AurixApp() {
     var title by remember { mutableStateOf("Nothing Playing") }
     var isPlaying by remember { mutableStateOf(false) }
     var tab by remember { mutableIntStateOf(0) }
+    val currentTrackId = controller?.currentMediaItem?.mediaId.orEmpty()
+    val currentTrackTitle = controller?.currentMediaItem?.mediaMetadata?.title?.toString() ?: title
     var libraryPermissionGranted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -153,6 +155,8 @@ fun AurixApp() {
                     NavigationBarItem(selected = tab == 2, onClick = { tab = 2 },
                         icon = { Icon(Icons.Default.AutoAwesome, null) }, label = { Text("AI DJ") })
                     NavigationBarItem(selected = tab == 3, onClick = { tab = 3 },
+                        icon = { Icon(Icons.Default.Mic, null) }, label = { Text("Karaoke") })
+                    NavigationBarItem(selected = tab == 4, onClick = { tab = 4 },
                         icon = { Icon(Icons.Default.MusicNote, null) }, label = { Text("AI Studio") })
                 }
             }
@@ -185,7 +189,8 @@ fun AurixApp() {
                 )
                 1 -> VisualiserStudioScreen()
                 2 -> AiDjTab(player = controller, djController = dj)
-                3 -> AiSongStudioTab(onTrackCreated = {
+                3 -> KaraokeScreen(player = controller, trackId = currentTrackId, trackTitle = currentTrackTitle)
+                4 -> AiSongStudioTab(onTrackCreated = {
                     if (libraryPermissionGranted) scope.launch {
                         tracks = LocalAudioScanner.scanAllTracks(context)
                     }

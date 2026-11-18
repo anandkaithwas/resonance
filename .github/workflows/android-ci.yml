@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [ "main", "develop" ]
+    branches: [ "main", "develop", "feat/karaoke-ai-remix-dj-rooms" ]
   pull_request:
     branches: [ "main", "develop" ]
   workflow_dispatch:
