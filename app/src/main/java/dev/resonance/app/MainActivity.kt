@@ -158,6 +158,8 @@ fun AurixApp() {
                         icon = { Icon(Icons.Default.Mic, null) }, label = { Text("Karaoke") })
                     NavigationBarItem(selected = tab == 4, onClick = { tab = 4 },
                         icon = { Icon(Icons.Default.MusicNote, null) }, label = { Text("AI Studio") })
+                    NavigationBarItem(selected = tab == 5, onClick = { tab = 5 },
+                        icon = { Icon(Icons.Default.Tune, null) }, label = { Text("Aurix AI") })
                 }
             }
         }
@@ -195,6 +197,7 @@ fun AurixApp() {
                         tracks = LocalAudioScanner.scanAllTracks(context)
                     }
                 })
+                5 -> AurixIntelligenceScreen()
             }
         }
     }
