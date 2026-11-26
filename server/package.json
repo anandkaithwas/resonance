@@ -1,0 +1,14 @@
+{
+  "name": "aurix-dj-room-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Server-authoritative HTTPS/WSS coordination for Aurix DJ Rooms",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -4,7 +4,7 @@ Status: Product/technical specification
 Target: Android app, namespace `dev.resonance.app`  
 Branch: `feat/karaoke-ai-remix-dj-rooms`
 
-This document adds three product modules to Aurix.studio. It is a build brief and acceptance specification; it does not claim that these features are already implemented.
+This document is the build brief and acceptance specification for three Aurix.studio modules. The first implementation pass is on this branch; unimplemented or provider-dependent items are called out in the README and module docs.
 
 ## Product principles
 

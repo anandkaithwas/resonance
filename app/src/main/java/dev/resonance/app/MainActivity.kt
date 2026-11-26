@@ -177,6 +177,10 @@ fun AurixApp() {
                         icon = { Icon(Icons.Default.MusicNote, null) }, label = { Text("AI Studio") })
                     NavigationBarItem(selected = tab == 5, onClick = { tab = 5 },
                         icon = { Icon(Icons.Default.Tune, null) }, label = { Text("Aurix AI") })
+                    NavigationBarItem(selected = tab == 6, onClick = { tab = 6 },
+                        icon = { Icon(Icons.Default.GraphicEq, null) }, label = { Text("Remix") })
+                    NavigationBarItem(selected = tab == 7, onClick = { tab = 7 },
+                        icon = { Icon(Icons.Default.Group, null) }, label = { Text("Rooms") })
                 }
             }
         }
@@ -231,6 +235,18 @@ fun AurixApp() {
                         trackId = currentTrackId,
                         title = currentTrackTitle,
                         artist = controller?.currentMediaItem?.mediaMetadata?.artist?.toString().orEmpty()
+                    )
+                    6 -> AiRemixScreen(
+                        player = controller,
+                        tracks = tracks,
+                        currentTrackId = currentTrackId,
+                        currentTrackTitle = currentTrackTitle
+                    )
+                    7 -> DjRoomScreen(
+                        player = controller,
+                        tracks = tracks,
+                        currentTrackId = currentTrackId,
+                        currentTrackTitle = currentTrackTitle
                     )
                 }
             }

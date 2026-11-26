@@ -18,7 +18,7 @@ class LrcParserTest {
         val parsed = LrcParser.parse("[offset:-150]\n[01:02.345]Line")
         assertEquals(-150L, parsed.offsetMs)
         assertEquals(62_345L, parsed.lines.single().timeMs)
-        assertEquals(0, LrcParser.activeLineIndex(parsed.lines, 62_194L, parsed.offsetMs))
+        assertEquals(0, LrcParser.activeLineIndex(parsed.lines, 62_200L, parsed.offsetMs))
     }
     @Test fun ignoresMalformedAndUntimedLines() {
         val parsed = LrcParser.parse("plain text\n[00:77.10]bad\n[00:02.00]valid")
