@@ -65,7 +65,7 @@ fun LibraryAndStreamTab(
             )
             Button(onClick = {
                 val uri = runCatching { java.net.URI(streamUrl.trim()) }.getOrNull()
-                if (uri?.scheme.equals("https", true) && !uri.host.isNullOrBlank()) onPlayStreamUrl(streamUrl.trim())
+                if (uri?.scheme.equals("https", true) && !uri?.host.isNullOrBlank()) onPlayStreamUrl(streamUrl.trim())
             }) { Text("Stream") }
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {

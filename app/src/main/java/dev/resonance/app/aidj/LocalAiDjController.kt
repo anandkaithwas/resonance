@@ -39,7 +39,7 @@ class LocalAiDjController(context: Context) {
         require(player.mediaItemCount > 0) { "There is no track in the queue" }
         val originalVolume = player.volume
         val steps = 24
-        val stepDelay = (fadeSeconds * 1000L / steps).coerceAtLeast(1L)
+        val stepDelay = (fadeSeconds * 1000f / steps).toLong().coerceAtLeast(1L)
         try {
             for (step in steps downTo 0) {
                 player.volume = originalVolume * step / steps
